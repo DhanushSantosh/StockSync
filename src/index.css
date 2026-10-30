@@ -15,11 +15,44 @@
   --color-warn: #e5c07b;
   --color-loss: #e8919a;
 
+  --color-outline: #737883;
+
+  /* Type scale: every piece of text uses one of these five roles. */
+  --text-micro: 0.75rem;
+  --text-micro--line-height: 1rem;
+  --text-caption: var(--size-caption);
+  --text-caption--line-height: 1.35;
+  --text-body: var(--size-body);
+  --text-body--line-height: 1.4;
+  --text-title: var(--size-title);
+  --text-title--line-height: 1.3;
+  --text-heading: var(--size-heading);
+  --text-heading--line-height: 1.2;
+  --text-display: clamp(3.25rem, 2.5rem + 6vw, 4.5rem);
+  --text-display--line-height: 1;
+
+  /* Spacing and shape: one value per job, resized in one place below. */
+  --spacing-gutter: var(--size-gutter);
+  --spacing-pad: var(--size-pad);
+  --spacing-gap: var(--size-gap);
+  --spacing-control: var(--size-control);
+  --radius-panel: 1.25rem;
+  --radius-control: 0.75rem;
+
   --ease-snap: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root {
-  --tabbar: calc(4rem + env(safe-area-inset-bottom));
+  --size-caption: 0.875rem;
+  --size-body: 1rem;
+  --size-title: 1.125rem;
+  --size-heading: 1.375rem;
+  --size-gutter: clamp(0.75rem, 4vw, 1.5rem);
+  --size-pad: 1rem;
+  --size-gap: 0.75rem;
+  --size-control: 3rem;
+  --tab-height: 4rem;
+  --tabbar: calc(var(--tab-height) + env(safe-area-inset-bottom));
   color-scheme: dark;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
@@ -28,15 +61,37 @@
   -webkit-font-smoothing: antialiased;
 }
 body {
-  @apply bg-ink font-sans text-sm text-fg;
+  @apply bg-ink font-sans text-body text-fg;
 }
 button {
   cursor: pointer;
   touch-action: manipulation;
 }
-@media (min-width: 768px) {
+@media (min-width: 48rem) {
   :root {
+    --size-caption: 0.8125rem;
+    --size-body: 0.875rem;
+    --size-title: 1rem;
+    --size-heading: 1.25rem;
+    --size-pad: 1.25rem;
+    --size-gap: 1rem;
+    --size-control: 2.5rem;
     scrollbar-gutter: stable;
+  }
+}
+/* A touch screen keeps thumb-sized controls at any width. */
+@media (pointer: coarse) {
+  :root {
+    --size-control: 3rem;
+  }
+}
+/* Landscape phones have little height to spare. */
+@media (max-height: 30rem) {
+  :root {
+    --tab-height: 3.25rem;
+  }
+  .tab-label {
+    display: none;
   }
 }
 button:disabled {
@@ -47,23 +102,17 @@ button:disabled {
   @apply outline-2 outline-offset-2 outline-accent;
 }
 
-@media (pointer: coarse) {
-  .menu-item {
-    min-height: 2.75rem;
-  }
-}
-
 /* In a layer so Tailwind utilities can override these per screen size. */
 @layer components {
   /* Surfaces and type */
   .panel {
-    @apply rounded-[20px] bg-panel p-5;
+    @apply rounded-panel bg-panel p-pad;
   }
   .heading {
-    @apply text-base font-semibold;
+    @apply text-title font-semibold;
   }
   .hint {
-    @apply text-[13px] text-muted;
+    @apply text-caption text-muted;
   }
   .tabular {
     font-variant-numeric: tabular-nums lining-nums;
@@ -71,22 +120,22 @@ button:disabled {
 
   /* Controls */
   .btn-accent {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-full bg-accent px-4 py-2.5 font-semibold whitespace-nowrap text-ink transition duration-150 hover:brightness-110 active:scale-[0.97];
+    @apply inline-flex min-h-control items-center justify-center gap-1.5 rounded-full bg-accent px-5 font-semibold whitespace-nowrap text-ink transition duration-150 hover:brightness-110 active:scale-[0.97];
   }
   .btn-soft {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-xl bg-raised px-4 py-2.5 font-semibold whitespace-nowrap transition duration-150 hover:bg-line active:scale-[0.98];
+    @apply inline-flex min-h-control items-center justify-center gap-1.5 rounded-control bg-raised px-4 font-semibold whitespace-nowrap transition duration-150 hover:bg-line active:scale-[0.98];
   }
   .btn-link {
-    @apply inline-flex min-h-11 items-center text-[13px] text-muted transition-colors duration-150 hover:text-fg md:min-h-0;
+    @apply inline-flex min-h-11 items-center text-caption text-muted transition-colors duration-150 hover:text-fg md:min-h-0;
   }
   .btn-row {
     @apply cursor-pointer text-left transition-colors duration-150 hover:bg-raised/50;
   }
   .field-label {
-    @apply block text-[13px] text-muted;
+    @apply block text-caption text-muted;
   }
   .field {
-    @apply mt-1.5 block h-11 w-full rounded-xl bg-raised px-3.5 text-base text-fg outline-none ring-1 ring-transparent transition duration-150 placeholder:text-muted focus:ring-accent sm:text-sm;
+    @apply mt-1.5 block h-control w-full rounded-control bg-ink px-3.5 text-[max(1rem,var(--size-body))] text-fg outline-none ring-1 ring-outline transition duration-150 placeholder:text-muted focus:ring-2 focus:ring-accent;
   }
 
   /* Menu: one pill slides between the views */
@@ -97,7 +146,7 @@ button:disabled {
     @apply pointer-events-none absolute top-1 bottom-1 left-0 rounded-full bg-raised transition-[transform,width] duration-300 ease-snap;
   }
   .menu-item {
-    @apply relative z-10 rounded-full px-4 py-2 text-muted transition-colors duration-200 hover:text-fg;
+    @apply relative z-10 min-h-[calc(var(--spacing-control)-0.5rem)] rounded-full px-4 text-muted transition-colors duration-200 hover:text-fg;
   }
   .menu-item[aria-current="page"] {
     @apply font-medium text-fg;
@@ -109,7 +158,7 @@ button:disabled {
     padding-bottom: env(safe-area-inset-bottom);
   }
   .tab {
-    @apply relative flex h-16 flex-col items-center justify-center gap-1 text-[11px] text-muted transition-colors duration-200;
+    @apply relative flex h-(--tab-height) flex-col items-center justify-center gap-0.5 text-micro text-muted transition-colors duration-200;
   }
   .tab[aria-current="page"] {
     @apply font-medium text-accent;
@@ -118,10 +167,10 @@ button:disabled {
     @apply flex size-9 items-center justify-center rounded-full bg-accent text-ink transition-transform duration-150 active:scale-90;
   }
   .tab-count {
-    @apply absolute top-1.5 left-1/2 ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-ink tabular-nums;
+    @apply absolute top-1.5 left-1/2 ml-1.5 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-accent px-1 text-micro font-semibold text-ink tabular-nums;
   }
   .step {
-    @apply flex size-10 shrink-0 items-center justify-center rounded-full bg-raised transition hover:bg-line active:scale-90 disabled:hover:bg-raised;
+    @apply flex size-11 shrink-0 items-center justify-center rounded-full bg-raised transition hover:bg-line active:scale-90 disabled:hover:bg-raised md:size-9;
   }
 
   /* Stock-change choice */
@@ -132,7 +181,7 @@ button:disabled {
     @apply pointer-events-none absolute top-1 bottom-1 left-1 w-[calc(25%-2px)] rounded-lg bg-accent transition-transform duration-300 ease-snap;
   }
   .choice-item {
-    @apply relative z-10 h-11 text-[13px] text-muted transition-colors duration-200 hover:text-fg md:h-9;
+    @apply relative z-10 h-control text-caption text-muted transition-colors duration-200 hover:text-fg;
   }
   .choice-item[aria-pressed="true"] {
     @apply font-semibold text-ink;
@@ -140,7 +189,7 @@ button:disabled {
 
   /* Data marks */
   .bar {
-    @apply h-2.5 overflow-hidden rounded-full bg-raised;
+    @apply h-2.5 overflow-hidden rounded-full bg-[#30333a];
   }
   .bar-fill {
     @apply h-full rounded-full bg-accent;
@@ -197,12 +246,22 @@ button:disabled {
     animation: row-in 420ms var(--ease-snap);
   }
   .toast {
-    @apply fixed bottom-[calc(var(--tabbar)+0.75rem)] left-1/2 z-[60] -translate-x-1/2 rounded-2xl bg-accent px-4 py-2.5 w-max max-w-[calc(100vw-2rem)] text-center font-medium text-ink md:bottom-6;
+    @apply fixed bottom-[calc(var(--tabbar)+0.75rem)] left-1/2 z-[60] -translate-x-1/2 rounded-control bg-accent px-4 py-2.5 w-max max-w-[calc(100vw-2rem)] text-center font-medium text-ink text-body md:bottom-6;
     animation: toast-in 280ms var(--ease-snap);
   }
   .skeleton {
-    @apply rounded-[20px] bg-panel;
+    @apply rounded-panel bg-panel;
     animation: pulse-soft 900ms ease-in-out infinite alternate;
+  }
+}
+
+/* High-contrast modes strip backgrounds, which would blank the data marks. */
+@media (forced-colors: active) {
+  .bar-fill,
+  .health span,
+  .choice-pill,
+  .menu-pill {
+    forced-color-adjust: none;
   }
 }
 

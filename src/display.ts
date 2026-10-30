@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { SaveResult } from "./inventory";
 
 // Restarts a CSS tick each time a value moves; key an element on `id`.
@@ -22,6 +22,45 @@ export function useNow() {
     return () => clearInterval(timer);
   }, []);
   return now;
+}
+
+const focusable =
+  "button:not(:disabled), input:not(:disabled), select, textarea, a[href]";
+
+// Keeps Tab inside an open sheet and returns focus to what opened it.
+export function useFocusTrap(
+  panel: RefObject<HTMLElement | null>,
+  active: boolean,
+) {
+  const [opener] = useState(() => document.activeElement as HTMLElement | null);
+  useEffect(() => {
+    if (!active) return;
+    const element = panel.current;
+    if (!element) return;
+    const previous = element.contains(document.activeElement)
+      ? opener
+      : (document.activeElement as HTMLElement | null);
+    if (!element.contains(document.activeElement))
+      element.querySelector<HTMLElement>(focusable)?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const items = [...element.querySelectorAll<HTMLElement>(focusable)];
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    element.addEventListener("keydown", onKey);
+    return () => {
+      element.removeEventListener("keydown", onKey);
+      if (previous?.isConnected) previous.focus({ preventScroll: true });
+    };
+  }, [panel, active, opener]);
 }
 
 export const savedMessage = (result: SaveResult, message: string) =>

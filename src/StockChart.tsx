@@ -28,11 +28,11 @@ export function StockChart({
 
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 pt-1.5">
-      <div className="tabular relative w-7 text-right text-muted" aria-hidden>
+      <div className="tabular relative w-8 text-right text-muted" aria-hidden>
         {ticks.map((tick) => (
           <span
             key={tick}
-            className="absolute right-0 -translate-y-1/2 text-xs"
+            className="absolute right-0 -translate-y-1/2 text-micro"
             style={{ top: `${y(tick)}%` }}
           >
             {tick}
@@ -40,7 +40,7 @@ export function StockChart({
         ))}
       </div>
       <div
-        className="relative h-36 touch-pan-y sm:h-44"
+        className="relative h-[clamp(9rem,28vw,11rem)] touch-pan-y"
         role="img"
         aria-label={`Line chart of total units per day from ${days[0].units} on ${shortDate(days[0].date)} to ${days[days.length - 1].units} today`}
         onPointerDown={hover}
@@ -84,10 +84,10 @@ export function StockChart({
         />
         {hovered !== null && (
           <div
-            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-lg bg-raised px-2.5 py-1.5 text-xs whitespace-nowrap shadow-lg shadow-black/40"
+            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-lg bg-raised px-2.5 py-1.5 text-micro whitespace-nowrap shadow-lg shadow-black/40"
             style={{ left: `${Math.min(Math.max(x(hovered), 12), 88)}%` }}
           >
-            <b className="tabular block text-sm font-semibold">
+            <b className="tabular block font-semibold">
               {days[hovered].units.toLocaleString()} units
             </b>
             <span className="text-muted">{shortDate(days[hovered].date)}</span>
@@ -98,7 +98,7 @@ export function StockChart({
         {labelled.map((index) => (
           <span
             key={index}
-            className={`absolute text-xs whitespace-nowrap text-muted ${index === 0 ? "" : index === days.length - 1 ? "-translate-x-full" : "-translate-x-1/2"} ${index === 3 || index === 9 ? "max-sm:hidden" : ""}`}
+            className={`absolute text-micro whitespace-nowrap text-muted ${index === 0 ? "" : index === days.length - 1 ? "-translate-x-full" : "-translate-x-1/2"} ${index === 3 || index === 9 ? "max-sm:hidden" : ""}`}
             style={{ left: `${x(index)}%` }}
           >
             {shortDate(days[index].date)}

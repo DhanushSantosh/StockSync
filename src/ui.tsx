@@ -53,7 +53,10 @@ export function Ticker({
 
 export function Alert({ children }: { children: ReactNode }) {
   return (
-    <p role="alert" className="rounded-xl bg-loss/10 px-3.5 py-2.5 text-loss">
+    <p
+      role="alert"
+      className="rounded-control bg-loss/10 px-3.5 py-2.5 text-loss"
+    >
       {children}
     </p>
   );
@@ -67,7 +70,7 @@ const statusText = {
 
 export function Status({ product }: { product: Product }) {
   const { label, tone } = statusText[statusOf(product)];
-  return <span className={`text-[13px] ${tone}`}>{label}</span>;
+  return <span className={`text-caption ${tone}`}>{label}</span>;
 }
 
 export function Changes({
@@ -104,13 +107,13 @@ export function Changes({
               >
                 <span
                   aria-hidden
-                  className={`row-span-2 flex size-9 items-center justify-center rounded-full text-base font-bold ${incoming ? "bg-gain/12 text-gain" : movement.change < 0 ? "bg-loss/12 text-loss" : "bg-raised text-muted"}`}
+                  className={`row-span-2 flex size-9 items-center justify-center rounded-full font-bold ${incoming ? "bg-gain/12 text-gain" : movement.change < 0 ? "bg-loss/12 text-loss" : "bg-raised text-muted"}`}
                 >
                   {incoming ? "+" : movement.change < 0 ? "−" : "0"}
                 </span>
                 <p className="truncate font-medium">{movement.productName}</p>
                 <span
-                  className={`tabular text-right text-base font-semibold ${incoming ? "text-gain" : ""}`}
+                  className={`tabular text-right text-title font-semibold ${incoming ? "text-gain" : ""}`}
                 >
                   {signed(movement.change)}
                 </span>

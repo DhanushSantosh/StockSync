@@ -11,7 +11,7 @@ import {
   type ProductInput,
   type StockAction,
 } from "./inventory";
-import { errorText, savedMessage } from "./display";
+import { errorText, savedMessage, useFocusTrap } from "./display";
 import { ImportProducts } from "./ImportProducts";
 import { Alert, Status, Ticker } from "./ui";
 
@@ -111,7 +111,7 @@ function StockForm({
 
   return (
     <>
-      <h2 className="pr-10 text-xl font-semibold">{product.name}</h2>
+      <h2 className="pr-10 text-heading font-semibold">{product.name}</h2>
       <p className="hint mt-0.5">
         {product.category}
         {product.supplier ? `, ${product.supplier}` : ""}
@@ -123,7 +123,7 @@ function StockForm({
           </p>
           <Ticker
             value={after}
-            className={`text-[56px] leading-none font-medium tracking-tight ${after < 0 ? "text-loss" : ""}`}
+            className={`text-display font-medium tracking-tight ${after < 0 ? "text-loss" : ""}`}
           />
         </div>
         <p className="pb-1 text-right">
@@ -178,7 +178,7 @@ function StockForm({
             onChange={(event) => setNote(event.target.value)}
           />
         </label>
-        <button className="btn-accent w-full !py-3" disabled={busy}>
+        <button className="btn-accent w-full" disabled={busy}>
           {busy ? "Recording…" : `Record ${modes[modeIndex].noun}`}
         </button>
       </form>
@@ -287,7 +287,7 @@ function ProductForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <h2 className="pr-10 text-xl font-semibold">
+      <h2 className="pr-10 text-heading font-semibold">
         {product ? "Edit details" : "Add product"}
       </h2>
       {error && <Alert>{error}</Alert>}
@@ -347,7 +347,9 @@ function DeleteConfirm({
   }
   return (
     <div className="space-y-4">
-      <h2 className="pr-10 text-xl font-semibold">Delete {product.name}?</h2>
+      <h2 className="pr-10 text-heading font-semibold">
+        Delete {product.name}?
+      </h2>
       {error && <Alert>{error}</Alert>}
       <p className="text-muted">
         Its {product.quantity} units leave your stock total. Its past changes
@@ -388,6 +390,8 @@ export function Sheet({
 }) {
   const [closing, setClosing] = useState(false);
   const timer = useRef(0);
+  const dialog = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialog, true);
   const close = () => {
     setClosing(true);
     timer.current = window.setTimeout(onClose, 180);
@@ -415,6 +419,7 @@ export function Sheet({
       }}
     >
       <div
+        ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-label={
@@ -424,7 +429,7 @@ export function Sheet({
               ? "Import products"
               : (product?.name ?? "Product")
         }
-        className={`relative max-h-[92dvh] w-full overflow-y-auto rounded-t-[20px] bg-panel p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:my-2 sm:mr-2 sm:max-h-none sm:max-w-md sm:rounded-[20px] sm:p-6 ${closing ? "sheet-closing" : "sheet"}`}
+        className={`relative max-h-[92dvh] w-full overflow-y-auto rounded-t-[20px] bg-panel p-pad pb-[max(var(--size-pad),env(safe-area-inset-bottom))] sm:my-2 sm:mr-2 sm:max-h-none sm:max-w-md sm:rounded-panel sm:p-pad ${closing ? "sheet-closing" : "sheet"}`}
       >
         <button
           className="absolute top-3 right-3 flex size-11 items-center justify-center rounded-full text-muted transition-colors hover:bg-raised hover:text-fg"

@@ -58,7 +58,7 @@ export function OverviewPage({
   if (products.length === 0)
     return (
       <section className="panel py-16 text-center">
-        <h2 className="text-2xl font-semibold">Add your first product</h2>
+        <h2 className="text-heading font-semibold">Add your first product</h2>
         <p className="hint mt-1.5">
           Your stock, reorders and changes will appear here.
         </p>
@@ -74,21 +74,21 @@ export function OverviewPage({
     );
 
   return (
-    <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] md:gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
-      <section className="panel !px-5 !pt-5 sm:!px-6 sm:!pt-6">
-        <h1 className="text-[15px] font-medium">Stock on hand</h1>
-        <p className="mt-1.5 flex items-baseline gap-2.5">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-gap md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+      <section className="panel">
+        <h1 className="text-body font-medium">Stock on hand</h1>
+        <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5">
           <Ticker
             value={summary.units}
             countIn
-            className="text-[56px] leading-none font-medium tracking-tight sm:text-7xl"
+            className="text-display font-medium tracking-tight"
           />
-          <span className="text-xl font-medium text-muted">units</span>
+          <span className="text-title font-medium text-muted">units</span>
         </p>
-        <p className="tabular mt-3 inline-block rounded-full bg-accent/14 px-3 py-1 font-medium text-accent">
+        <p className="tabular mt-3 inline-block rounded-full bg-accent/14 px-3 py-1 text-caption font-medium text-accent">
           {signed(weekChange)} units in the last 7 days
         </p>
-        <div className="hint mt-5 flex justify-between">
+        <div className="hint mt-5 flex flex-wrap justify-between gap-x-3">
           <span>Total units across all products</span>
           <span>Last {chartDays} days</span>
         </div>
@@ -102,21 +102,21 @@ export function OverviewPage({
             ? `${lowItems.length} ${lowItems.length === 1 ? "product" : "products"} at or below their alert level`
             : "Every product is above its alert level"}
         </p>
-        <div className="-mx-5 mt-3.5 flex-1 max-md:[&>button:nth-child(n+4)]:hidden">
+        <div className="-mx-pad mt-3.5 flex-1 max-md:[&>button:nth-child(n+4)]:hidden">
           {lowItems.slice(0, 5).map((product) => {
             const order = suggestedReorder(product);
             return (
               <button
                 key={product.id}
-                className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-t border-line px-5 py-3"
+                className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-t border-line px-pad py-3"
                 onClick={() => onSelect(product)}
               >
                 <span className="truncate font-medium">{product.name}</span>
-                <span className="tabular text-right text-base font-semibold">
+                <span className="tabular text-right text-title font-semibold">
                   {order ?? "–"}
                 </span>
                 <span
-                  className={`text-[13px] ${product.quantity ? "text-warn" : "text-loss"}`}
+                  className={`text-caption ${product.quantity ? "text-warn" : "text-loss"}`}
                 >
                   {reorderNote(product)}
                 </span>
@@ -147,7 +147,7 @@ export function OverviewPage({
           <span className="bg-warn" style={{ flexGrow: summary.low }} />
           <span className="bg-loss" style={{ flexGrow: summary.out }} />
         </div>
-        <dl className="mt-3 grid grid-cols-3 gap-2">
+        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 sm:grid sm:grid-cols-3">
           {(
             [
               ["Enough", healthy, "bg-gain"],
@@ -156,7 +156,7 @@ export function OverviewPage({
             ] as const
           ).map(([label, count, tone]) => (
             <div key={label} className="flex flex-col">
-              <dd className="order-1 text-[22px] font-semibold">
+              <dd className="order-1 text-heading font-semibold">
                 <Ticker value={count} />
               </dd>
               <dt className="hint order-2 flex items-center gap-1.5">
@@ -173,17 +173,17 @@ export function OverviewPage({
             On hand
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="size-2.5 rounded-[3px] bg-raised" />
+            <span className="size-2.5 rounded-[3px] bg-[#30333a]" />
             Room to target
           </span>
         </div>
         {categories.map(({ category, units, capacity }) => (
           <div
             key={category}
-            className="grid grid-cols-[6rem_minmax(0,1fr)_5.5rem] items-center gap-3 py-2"
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 py-2 md:grid-cols-[6rem_minmax(0,1fr)_5.5rem]"
           >
             <span className="truncate">{category}</span>
-            <div className="bar">
+            <div className="bar max-md:col-span-2 max-md:row-start-2">
               <div
                 className="bar-fill"
                 style={{ width: `${(units / capacity) * 100}%` }}

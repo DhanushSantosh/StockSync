@@ -43,7 +43,7 @@ export function ProductsPage({
 
   return (
     <section className="panel !p-0">
-      <div className="flex flex-wrap gap-2 p-4 sm:gap-3 sm:p-5">
+      <div className="flex flex-wrap gap-2 p-pad">
         <label className="relative min-w-full flex-1 sm:min-w-48">
           <Search
             size={16}
@@ -52,13 +52,13 @@ export function ProductsPage({
           <input
             className="field !mt-0 !pl-10"
             aria-label="Search products"
-            placeholder="Search products, SKU or supplier"
+            placeholder="Search products"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
         <select
-          className="field !mt-0 !w-auto min-w-0 max-sm:flex-1"
+          className="field !mt-0 !w-auto min-w-40 max-sm:flex-1"
           aria-label="Filter by category"
           value={category}
           onChange={(event) => setCategory(event.target.value)}
@@ -73,19 +73,19 @@ export function ProductsPage({
         </button>
       </div>
       {products.length === 0 ? (
-        <div className="px-5 pt-8 pb-14 text-center">
+        <div className="px-pad pt-8 pb-14 text-center">
           <p className="hint">No products yet.</p>
           <button className="btn-accent mt-4" onClick={onAdd}>
             Add product
           </button>
         </div>
       ) : visible.length === 0 ? (
-        <p className="hint px-5 pt-8 pb-14 text-center">
+        <p className="hint px-pad pt-8 pb-14 text-center">
           No products match this search.
         </p>
       ) : (
         <div className="pb-2">
-          <div className="hint hidden grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_5rem_6.5rem] gap-5 border-b border-line px-5 pb-2 md:grid">
+          <div className="hint hidden grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_5rem_6.5rem] gap-5 border-b border-line px-pad pb-2 md:grid">
             <span>Product</span>
             <span>Category</span>
             <span>Stock against target</span>
@@ -95,7 +95,7 @@ export function ProductsPage({
           {visible.map((product) => (
             <button
               key={product.id}
-              className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-1.5 border-b border-line px-5 py-3 last:border-b-0 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_5rem_6.5rem]"
+              className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-1.5 border-b border-line px-pad py-3 last:border-b-0 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_5rem_6.5rem]"
               onClick={() => onSelect(product)}
             >
               <span className="min-w-0">
@@ -121,7 +121,7 @@ export function ProductsPage({
                   }}
                 />
               </span>
-              <span className="text-right text-base font-semibold">
+              <span className="text-right text-title font-semibold">
                 <Ticker value={product.quantity} />
               </span>
               <span className="hidden text-right md:block">

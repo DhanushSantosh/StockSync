@@ -74,10 +74,10 @@ export function AuthScreen() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center p-4">
-      <section key={mode} className="panel page w-full max-w-sm !p-6">
-        <p className="text-lg font-semibold tracking-tight">StockSync</p>
-        <h1 className="mt-6 text-[28px] leading-tight font-semibold">
+    <main className="flex min-h-dvh items-center justify-center p-gutter">
+      <section key={mode} className="panel page w-full max-w-sm">
+        <p className="text-title font-semibold tracking-tight">StockSync</p>
+        <h1 className="mt-6 text-heading leading-tight font-semibold">
           {mode === "login" ? "Sign in" : "Create account"}
         </h1>
         <form onSubmit={submit} className="mt-5 space-y-4">
@@ -108,7 +108,7 @@ export function AuthScreen() {
               required
             />
           </label>
-          <button className="btn-accent w-full !py-3" disabled={busy}>
+          <button className="btn-accent w-full" disabled={busy}>
             {busy
               ? "Please wait…"
               : mode === "login"
@@ -138,6 +138,6 @@ export function AuthScreen() {
           )}
         </div>
       </section>
-    </div>
+    </main>
   );
 }

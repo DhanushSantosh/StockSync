@@ -123,6 +123,15 @@ function AppShell({ user }: { user: User }) {
     return () => clearTimeout(timer);
   }, [notice]);
 
+  const content = useRef<HTMLElement>(null);
+  const firstPage = useRef(true);
+  useEffect(() => {
+    document.title = `${page} | StockSync`;
+    // Move assistive tech to the new page, without doing so on first load.
+    if (firstPage.current) firstPage.current = false;
+    else content.current?.focus({ preventScroll: true });
+  }, [page]);
+
   useEffect(() => {
     const measure = () => {
       const item = menu.current[page];
@@ -135,9 +144,17 @@ function AppShell({ user }: { user: User }) {
   }, [page, attention]);
 
   return (
-    <div className="mx-auto max-w-[1240px] px-3 pt-[env(safe-area-inset-top)] pb-[calc(var(--tabbar)+1rem)] sm:px-6 md:pb-10">
-      <header className="flex h-14 items-center gap-1.5 md:h-[72px] md:gap-3">
-        <span className="text-lg font-semibold tracking-tight">StockSync</span>
+    <div className="mx-auto max-w-[1240px] px-gutter pt-[env(safe-area-inset-top)] pb-[calc(var(--tabbar)+1rem)] md:pb-10">
+      <a
+        href="#content"
+        className="btn-accent fixed top-2 left-2 z-[70] -translate-y-24 focus:translate-y-0"
+      >
+        Skip to content
+      </a>
+      <header className="flex min-h-14 flex-wrap items-center gap-1.5 md:min-h-[72px] md:gap-3">
+        <span className="text-title font-semibold tracking-tight">
+          StockSync
+        </span>
         <nav className="menu mx-auto max-md:hidden" aria-label="Main">
           <span
             className="menu-pill"
@@ -164,7 +181,7 @@ function AppShell({ user }: { user: User }) {
           ))}
         </nav>
         <button
-          className="btn-accent max-md:ml-auto max-md:size-11 max-md:!p-0"
+          className="btn-accent max-md:ml-auto max-md:size-control max-md:!p-0"
           aria-label="Add product"
           onClick={add}
         >
@@ -180,9 +197,9 @@ function AppShell({ user }: { user: User }) {
           <LogOut size={17} />
         </button>
       </header>
-      <main>
+      <main id="content" ref={content} tabIndex={-1} className="outline-none">
         {offline && (
-          <p className="page mb-4 flex items-center gap-2 rounded-xl bg-warn/10 px-3.5 py-2.5 text-warn">
+          <p className="page mb-4 flex items-center gap-2 rounded-control bg-warn/10 px-3.5 py-2.5 text-warn">
             <CloudOff size={16} className="shrink-0" />
             You're offline. Changes are saved on this device and sync when
             you're back.
@@ -194,12 +211,15 @@ function AppShell({ user }: { user: User }) {
           </div>
         )}
         {loading ? (
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] md:gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+          <div className="grid gap-gap md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
             <div className="skeleton h-[26rem]" />
             <div className="skeleton h-[26rem]" />
           </div>
         ) : (
           <div key={page} className="page">
+            {page !== "Overview" && (
+              <h1 className="mb-gap text-heading font-semibold">{page}</h1>
+            )}
             {page === "Overview" ? (
               <OverviewPage
                 products={products}
@@ -243,12 +263,12 @@ function AppShell({ user }: { user: User }) {
                   <span className="tab-main">
                     <Icon size={19} />
                   </span>
-                  {item}
+                  <span className="tab-label">{item}</span>
                 </>
               ) : (
                 <>
                   <Icon size={21} />
-                  {item}
+                  <span className="tab-label">{item}</span>
                   {item === "Reorder" && attention > 0 && (
                     <span className="tab-count">{attention}</span>
                   )}
@@ -268,11 +288,13 @@ function AppShell({ user }: { user: User }) {
           onNotice={setNotice}
         />
       )}
-      {notice && (
-        <div key={notice} role="status" className="toast">
-          {notice}
-        </div>
-      )}
+      <div role="status" aria-live="polite">
+        {notice && (
+          <div key={notice} className="toast">
+            {notice}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -295,7 +317,7 @@ export default function App() {
     return (
       <div className="flex min-h-dvh items-center justify-center p-4">
         <section className="panel max-w-md !p-6">
-          <h1 className="text-xl font-semibold">Connect Firebase</h1>
+          <h1 className="text-heading font-semibold">Connect Firebase</h1>
           <p className="hint mt-2 leading-relaxed">
             Enable Email/Password Authentication and Cloud Firestore, copy{" "}
             <code>.env.example</code> to <code>.env</code>, fill in the four

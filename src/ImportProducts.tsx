@@ -67,7 +67,7 @@ export function ImportProducts({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="pr-10 text-xl font-semibold">Import products</h2>
+        <h2 className="pr-10 text-heading font-semibold">Import products</h2>
         <p className="hint mt-0.5">
           Upload a CSV with Name and Category columns. Quantity, SKU, Alert at,
           Target and Supplier are optional.
@@ -90,7 +90,7 @@ export function ImportProducts({
       {parsed && (
         <div className="page space-y-3">
           <p>
-            <span className="text-[22px] font-semibold">
+            <span className="text-heading font-semibold">
               {parsed.rows.length}
             </span>{" "}
             <span className="text-muted">
@@ -115,7 +115,7 @@ export function ImportProducts({
             </div>
           )}
           <button
-            className="btn-accent w-full !py-3"
+            className="btn-accent w-full"
             disabled={busy || parsed.rows.length === 0}
             onClick={submit}
           >

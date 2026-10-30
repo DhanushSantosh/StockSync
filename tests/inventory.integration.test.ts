@@ -189,6 +189,7 @@ describe("stock movement workflow", () => {
         quantity: 1,
       })),
     );
+    await waitForPendingWrites(db);
     expect(await listProducts(db)).toHaveLength(260);
   }, 20000);
 

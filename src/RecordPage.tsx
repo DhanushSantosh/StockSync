@@ -1,6 +1,6 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { ChevronUp, Minus, Plus, Search, X } from "lucide-react";
-import { errorText, savedMessage } from "./display";
+import { errorText, savedMessage, useFocusTrap } from "./display";
 import { auth, db } from "./firebase";
 import {
   recordStockChanges,
@@ -66,6 +66,8 @@ function SaleForm({
     .map((product) => ({ product, amount: cart[product.id] }));
   const units = lines.reduce((sum, line) => sum + line.amount, 0);
   const open = reviewing && lines.length > 0;
+  const review = useRef<HTMLDivElement>(null);
+  useFocusTrap(review, open);
 
   function setAmount(product: Product, amount: number) {
     const next = { ...cart };
@@ -111,9 +113,9 @@ function SaleForm({
   }
 
   return (
-    <div className="grid gap-4 max-md:pb-16 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div className="grid gap-gap max-md:pb-16 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <section className="panel !px-0 !pb-1">
-        <div className="px-5 pb-3">
+        <div className="px-pad pb-3">
           <SearchBox
             value={search}
             onChange={setSearch}
@@ -124,7 +126,7 @@ function SaleForm({
           {results.map((product) => (
             <button
               key={product.id}
-              className="btn-row flex w-full items-center justify-between gap-3 border-t border-line px-5 py-3 disabled:hover:bg-transparent"
+              className="btn-row flex w-full items-center justify-between gap-3 border-t border-line px-pad py-3 disabled:hover:bg-transparent"
               disabled={product.quantity === 0}
               onClick={() => add(product)}
             >
@@ -148,7 +150,7 @@ function SaleForm({
             </button>
           ))}
           {results.length === 0 && (
-            <p className="hint border-t border-line px-5 py-8 text-center">
+            <p className="hint border-t border-line px-pad py-8 text-center">
               No products match this search.
             </p>
           )}
@@ -163,7 +165,7 @@ function SaleForm({
       {lines.length > 0 && !open && (
         <button
           type="button"
-          className="btn-accent row-in fixed inset-x-3 bottom-[calc(var(--tabbar)+0.5rem)] z-30 !justify-between !rounded-2xl !py-3.5 md:hidden"
+          className="btn-accent row-in fixed inset-x-3 bottom-[calc(var(--tabbar)+0.5rem)] z-30 !justify-between !rounded-control md:hidden"
           onClick={() => setReviewing(true)}
         >
           {units} {units === 1 ? "unit" : "units"} in this sale
@@ -173,96 +175,104 @@ function SaleForm({
           </span>
         </button>
       )}
-      <form
-        onSubmit={submit}
-        className={`panel flex flex-col self-start max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-50 max-md:max-h-[85dvh] max-md:overflow-y-auto max-md:rounded-b-none max-md:pb-[max(1.25rem,env(safe-area-inset-bottom))] ${open ? "sheet" : "max-md:hidden"}`}
+      <div
+        ref={review}
+        role={open ? "dialog" : undefined}
+        aria-modal={open || undefined}
+        aria-label={open ? "This sale" : undefined}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setReviewing(false);
+        }}
+        className={`panel flex flex-col self-start max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-50 max-md:max-h-[85dvh] max-md:overflow-y-auto max-md:rounded-b-none max-md:pb-[max(var(--size-pad),env(safe-area-inset-bottom))] ${open ? "sheet" : "max-md:hidden"}`}
       >
-        <div className="flex items-center justify-between">
-          <h2 className="heading">This sale</h2>
+        <form onSubmit={submit} className="flex flex-col">
+          <div className="flex items-center justify-between">
+            <h2 className="heading">This sale</h2>
+            <button
+              type="button"
+              className="-mr-2 flex size-11 items-center justify-center text-muted md:hidden"
+              aria-label="Close sale review"
+              onClick={() => setReviewing(false)}
+            >
+              <X size={18} />
+            </button>
+          </div>
+          {lines.length === 0 ? (
+            <p className="hint mt-1">Tap products to add them.</p>
+          ) : (
+            <div className="mt-2">
+              {lines.map(({ product, amount }) => (
+                <div
+                  key={product.id}
+                  className="row-in flex items-center gap-2 border-b border-line py-2.5"
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {product.name}
+                  </span>
+                  <button
+                    type="button"
+                    className="step"
+                    aria-label={`One less ${product.name}`}
+                    onClick={() => setAmount(product, amount - 1)}
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <input
+                    className="tabular h-11 w-12 shrink-0 rounded-control bg-ink text-center text-[max(1rem,var(--size-body))] ring-1 ring-outline outline-none focus:ring-2 focus:ring-accent md:h-9"
+                    aria-label={`Units of ${product.name}`}
+                    inputMode="numeric"
+                    value={amount}
+                    onChange={(event) =>
+                      setAmount(product, Number(event.target.value) || 0)
+                    }
+                  />
+                  <button
+                    type="button"
+                    className="step"
+                    aria-label={`One more ${product.name}`}
+                    disabled={amount >= product.quantity}
+                    onClick={() => setAmount(product, amount + 1)}
+                  >
+                    <Plus size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:text-fg md:size-9"
+                    aria-label={`Remove ${product.name}`}
+                    onClick={() => setAmount(product, 0)}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <label className="field-label mt-4">
+            Note (optional)
+            <input
+              className="field"
+              maxLength={200}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+            />
+          </label>
+          {error && (
+            <div className="mt-3">
+              <Alert>{error}</Alert>
+            </div>
+          )}
           <button
-            type="button"
-            className="-mr-2 flex size-11 items-center justify-center text-muted md:hidden"
-            aria-label="Close sale review"
-            onClick={() => setReviewing(false)}
+            className="btn-accent mt-4 w-full"
+            disabled={busy || lines.length === 0}
           >
-            <X size={18} />
+            {busy
+              ? "Recording…"
+              : lines.length
+                ? `Record sale of ${units} ${units === 1 ? "unit" : "units"}`
+                : "Record sale"}
           </button>
-        </div>
-        {lines.length === 0 ? (
-          <p className="hint mt-1">Tap products to add them.</p>
-        ) : (
-          <div className="mt-2">
-            {lines.map(({ product, amount }) => (
-              <div
-                key={product.id}
-                className="row-in flex items-center gap-2 border-b border-line py-2.5"
-              >
-                <span className="min-w-0 flex-1 truncate font-medium">
-                  {product.name}
-                </span>
-                <button
-                  type="button"
-                  className="step"
-                  aria-label={`One less ${product.name}`}
-                  onClick={() => setAmount(product, amount - 1)}
-                >
-                  <Minus size={14} />
-                </button>
-                <input
-                  className="tabular h-10 w-12 shrink-0 rounded-lg bg-raised text-center text-base outline-none focus:ring-1 focus:ring-accent"
-                  aria-label={`Units of ${product.name}`}
-                  inputMode="numeric"
-                  value={amount}
-                  onChange={(event) =>
-                    setAmount(product, Number(event.target.value) || 0)
-                  }
-                />
-                <button
-                  type="button"
-                  className="step"
-                  aria-label={`One more ${product.name}`}
-                  disabled={amount >= product.quantity}
-                  onClick={() => setAmount(product, amount + 1)}
-                >
-                  <Plus size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:text-fg"
-                  aria-label={`Remove ${product.name}`}
-                  onClick={() => setAmount(product, 0)}
-                >
-                  <X size={15} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <label className="field-label mt-4">
-          Note (optional)
-          <input
-            className="field"
-            maxLength={200}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-          />
-        </label>
-        {error && (
-          <div className="mt-3">
-            <Alert>{error}</Alert>
-          </div>
-        )}
-        <button
-          className="btn-accent mt-4 w-full !py-3"
-          disabled={busy || lines.length === 0}
-        >
-          {busy
-            ? "Recording…"
-            : lines.length
-              ? `Record sale of ${units} ${units === 1 ? "unit" : "units"}`
-              : "Record sale"}
-        </button>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
@@ -333,7 +343,7 @@ function CountForm({
 
   return (
     <form onSubmit={submit} className="panel !px-0 !pb-0">
-      <div className="px-5 pb-3">
+      <div className="px-pad pb-3">
         <SearchBox value={search} onChange={setSearch} />
         <p className="hint mt-2.5">
           Enter what is on the shelf. Leave a product blank to keep its stock.
@@ -345,7 +355,7 @@ function CountForm({
         return (
           <label
             key={product.id}
-            className="grid cursor-text grid-cols-[minmax(0,1fr)_3.5rem_5rem] items-center gap-3 border-t border-line px-5 py-2.5"
+            className="grid cursor-text grid-cols-[minmax(0,1fr)_3.5rem_5rem] items-center gap-3 border-t border-line px-pad py-2.5"
           >
             <span className="min-w-0">
               <span className="block truncate font-medium">{product.name}</span>
@@ -361,7 +371,7 @@ function CountForm({
                 : ""}
             </span>
             <input
-              className="tabular h-10 w-full rounded-xl bg-raised px-3 text-right text-base outline-none focus:ring-1 focus:ring-accent"
+              className="tabular h-control w-full rounded-control bg-ink px-3 text-right text-[max(1rem,var(--size-body))] ring-1 ring-outline outline-none focus:ring-2 focus:ring-accent"
               aria-label={`Counted units of ${product.name}`}
               type="number"
               inputMode="numeric"
@@ -375,7 +385,7 @@ function CountForm({
           </label>
         );
       })}
-      <div className="sticky bottom-[var(--tabbar)] rounded-b-[20px] border-t border-line bg-panel p-4 md:bottom-0 md:p-5">
+      <div className="rounded-b-panel border-t border-line bg-panel p-pad [@media(min-height:36rem)]:sticky [@media(min-height:36rem)]:bottom-[var(--tabbar)] md:[@media(min-height:36rem)]:bottom-0">
         {error && (
           <div className="mb-3">
             <Alert>{error}</Alert>
@@ -384,14 +394,14 @@ function CountForm({
         <label className="flex min-h-11 items-center gap-2.5 md:min-h-0">
           <input
             type="checkbox"
-            className="size-4 accent-accent"
+            className="size-6 accent-accent"
             checked={missingSold}
             onChange={(event) => setMissingSold(event.target.checked)}
           />
           Record missing units as sold
         </label>
         <button
-          className="btn-accent mt-3 w-full !py-3"
+          className="btn-accent mt-3 w-full"
           disabled={busy || invalid || changed.length === 0}
         >
           {busy
@@ -417,7 +427,7 @@ export function RecordPage({
   const [mode, setMode] = useState<(typeof modes)[number]>("Sale");
   const index = modes.indexOf(mode);
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="mx-auto max-w-5xl space-y-gap">
       <div className="choice mx-auto w-full max-w-sm !grid-cols-2">
         <span
           className="choice-pill !w-[calc(50%-4px)]"

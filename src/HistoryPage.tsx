@@ -53,8 +53,8 @@ export function HistoryPage({
   }
 
   return (
-    <section className="panel mx-auto max-w-3xl max-sm:!p-4">
-      <div className="flex flex-wrap gap-2 sm:gap-3">
+    <section className="panel mx-auto max-w-3xl">
+      <div className="flex flex-wrap gap-2">
         <label className="relative min-w-full flex-1 sm:min-w-44">
           <Search
             size={16}
@@ -69,7 +69,7 @@ export function HistoryPage({
           />
         </label>
         <select
-          className="field !mt-0 !w-auto min-w-0 max-sm:flex-1"
+          className="field !mt-0 !w-auto min-w-40 max-sm:flex-1"
           aria-label="Filter by type of change"
           value={kind}
           onChange={(event) => setKind(event.target.value)}

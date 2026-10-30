@@ -79,7 +79,7 @@ export function ReorderPage({
   }
 
   return (
-    <div className="space-y-3 md:space-y-4">
+    <div className="space-y-gap">
       <section className="panel flex flex-wrap items-center gap-x-5 gap-y-3">
         <div className="mr-auto max-sm:w-full">
           <h2 className="heading">
@@ -114,17 +114,17 @@ export function ReorderPage({
       ) : (
         bySupplier.map(([supplier, group]) => (
           <section key={supplier} className="panel !px-0 !pb-1">
-            <h2 className="heading px-5 pb-3">{supplier}</h2>
+            <h2 className="heading px-pad pb-3">{supplier}</h2>
             {group.map((product) => {
               const order = suggestedReorder(product);
               return (
                 <button
                   key={product.id}
-                  className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 border-t border-line px-5 py-3"
+                  className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 border-t border-line px-pad py-3"
                   onClick={() => onSelect(product)}
                 >
                   <span className="truncate font-medium">{product.name}</span>
-                  <span className="tabular text-right text-base font-semibold">
+                  <span className="tabular text-right text-title font-semibold">
                     {order ?? "–"}
                   </span>
                   <span>
