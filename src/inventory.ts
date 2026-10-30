@@ -224,7 +224,8 @@ export async function removeProduct(db: Firestore, uid: string, id: string) {
       productId: id,
       productName: product.name,
       kind: "deleted",
-      change: -product.quantity,
+      // Not -quantity: -0 is stored as a double and fails the int rule.
+      change: 0 - product.quantity,
       quantityBefore: product.quantity,
       quantityAfter: 0,
       note: "Product removed",

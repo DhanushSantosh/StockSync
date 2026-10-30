@@ -81,4 +81,26 @@ describe("stock movement workflow", () => {
       movements.find((item) => item.kind === "deleted")?.quantityBefore,
     ).toBe(8);
   });
+
+  it("deletes an out-of-stock product and records a zero change", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    await createProduct(db, "alice", {
+      name: "Notebook",
+      sku: "N-1",
+      category: "Stationery",
+      quantity: 0,
+      lowStockThreshold: 3,
+      targetStock: 20,
+      supplier: "Supplier",
+    });
+    const productDocs = await getDocs(collection(db, "users/alice/products"));
+    await removeProduct(db, "alice", productDocs.docs[0].id);
+    expect((await getDocs(collection(db, "users/alice/products"))).empty).toBe(
+      true,
+    );
+    const movements = (
+      await getDocs(collection(db, "users/alice/movements"))
+    ).docs.map((item) => item.data());
+    expect(movements.find((item) => item.kind === "deleted")?.change).toBe(0);
+  });
 });
