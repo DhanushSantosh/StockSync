@@ -6,20 +6,31 @@ import {
   createProduct,
   duplicateProblem,
   editProduct,
+  formatMoney,
+  formatQuantity,
   matchCategory,
+  parseMoney,
   removeProduct,
+  shopId,
   similarCategory,
+  unitSuffix,
+  units,
+  validQuantity,
   suggestedReorder,
   type Product,
   type ProductInput,
   type StockAction,
+  type Unit,
 } from "./inventory";
 import { errorText, savedMessage, useFocusTrap } from "./display";
+import { BarcodeButton as ScanButton } from "./BarcodeButton";
 import { ImportProducts } from "./ImportProducts";
+import { SettingsPanel } from "./SettingsPanel";
 import { Alert, Status, Ticker } from "./ui";
+import { t } from "./i18n";
 
 export type Panel =
-  | { kind: "create" | "import" }
+  | { kind: "create" | "import" | "settings" }
   | { kind: "stock" | "edit" | "delete"; id: string };
 
 const emptyInput: ProductInput = {
@@ -30,45 +41,50 @@ const emptyInput: ProductInput = {
   lowStockThreshold: 5,
   targetStock: 20,
   supplier: "",
+  unit: "pcs",
+  packSize: 1,
+  expiryDate: "",
 };
 
 type Mode = StockAction["kind"];
 const modes: { kind: Mode; label: string; noun: string; amount: string }[] = [
-  { kind: "sale", label: "Sold", noun: "sale", amount: "Units sold" },
+  { kind: "sale", label: t("Sold"), noun: "sale", amount: t("Units sold") },
   {
     kind: "return",
-    label: "Returned",
+    label: t("Returned"),
     noun: "return",
-    amount: "Units returned",
+    amount: t("Units returned"),
   },
   {
     kind: "restock",
-    label: "Restock",
+    label: t("Restock"),
     noun: "restock",
-    amount: "Units received",
+    amount: t("Units received"),
   },
   {
     kind: "damage",
-    label: "Damaged",
+    label: t("Damaged"),
     noun: "damage",
-    amount: "Units damaged or lost",
+    amount: t("Units damaged or lost"),
   },
   {
     kind: "correction",
-    label: "Count",
+    label: t("Count"),
     noun: "count",
-    amount: "Units counted",
+    amount: t("Units counted"),
   },
 ];
 
 function StockForm({
   product,
+  canManage,
   onEdit,
   onDelete,
   onDone,
   onNotice,
 }: {
   product: Product;
+  canManage: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onDone: () => void;
@@ -80,7 +96,11 @@ function StockForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const current = product.quantity;
-  const entered = amount === "" ? null : Number(amount);
+  const pack = product.packSize ?? 1;
+  const [inPacks, setInPacks] = useState(false);
+  const [expiry, setExpiry] = useState("");
+  const multiplier = mode === "restock" && inPacks ? pack : 1;
+  const entered = amount === "" ? null : Number(amount) * multiplier;
   const after =
     entered === null
       ? current
@@ -101,18 +121,22 @@ function StockForm({
     try {
       if (
         entered === null ||
-        !Number.isSafeInteger(entered) ||
-        entered < 0 ||
+        !validQuantity(entered, product) ||
         (mode !== "correction" && entered === 0)
       )
-        throw new Error("Enter a whole number of units.");
-      const result = await adjustStock(db, auth.currentUser.uid, product.id, {
+        throw new Error(
+          product.unit === "kg" || product.unit === "L"
+            ? "Enter an amount with up to 3 decimals."
+            : "Enter a whole number of units.",
+        );
+      const result = await adjustStock(db, shopId(), product.id, {
         kind: mode,
         amount: entered,
         note,
         clampAtZero: short,
+        expiryDate: mode === "restock" ? expiry : undefined,
       });
-      onNotice(savedMessage(result, "Stock change recorded."));
+      onNotice(savedMessage(result, t("Stock change recorded.")));
       onDone();
     } catch (cause) {
       setError(errorText(cause));
@@ -130,7 +154,7 @@ function StockForm({
       <div className="mt-5 flex items-end justify-between">
         <div>
           <p className="hint">
-            {after === current ? "On hand" : "After this change"}
+            {after === current ? t("On hand") : t("After this change")}
           </p>
           <Ticker
             value={Math.max(after, 0)}
@@ -140,7 +164,10 @@ function StockForm({
         <p className="pb-1 text-right">
           <Status product={product} />
           {after !== current && (
-            <span className="hint tabular block">Now {current}</span>
+            <span className="hint tabular block">
+              Now {formatQuantity(current)}
+              {unitSuffix(product)}
+            </span>
           )}
         </p>
       </div>
@@ -164,24 +191,46 @@ function StockForm({
                 setAmount("");
               }}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
         <label className="field-label">
-          {modes[modeIndex].amount}
+          {t(modes[modeIndex].amount)}
           <input
             className="field tabular"
             type="number"
-            inputMode="numeric"
-            min={mode === "correction" ? 0 : 1}
-            step="1"
+            inputMode={unitSuffix(product) ? "decimal" : "numeric"}
+            min={0}
+            step="any"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             autoFocus
             required
           />
         </label>
+        {mode === "restock" && pack > 1 && (
+          <label className="flex min-h-11 items-center gap-2.5 md:min-h-0">
+            <input
+              type="checkbox"
+              className="size-6 accent-accent"
+              checked={inPacks}
+              onChange={(event) => setInPacks(event.target.checked)}
+            />
+            Count in cartons of {pack}
+          </label>
+        )}
+        {mode === "restock" && (
+          <label className="field-label">
+            Expiry of this delivery (optional)
+            <input
+              className="field"
+              type="date"
+              value={expiry}
+              onChange={(event) => setExpiry(event.target.value)}
+            />
+          </label>
+        )}
         {short && (
           <p className="text-caption text-warn">
             Only {current} on hand. Stock will go to 0 and the note will show
@@ -199,30 +248,55 @@ function StockForm({
         </label>
         <button className="btn-accent w-full" disabled={busy}>
           {busy
-            ? "Recording…"
-            : `Record ${modes[modeIndex].noun}${short ? ", stock goes to 0" : ""}`}
+            ? t("Recording…")
+            : `${t(`Record ${modes[modeIndex].noun}`)}${short ? ", stock goes to 0" : ""}`}
         </button>
       </form>
       <dl className="tabular mt-6 grid grid-cols-[1fr_auto] gap-y-2 border-t border-line pt-4 text-muted">
+        {product.onOrder ? (
+          <>
+            <dt>On order</dt>
+            <dd className="text-right text-fg">{product.onOrder} units</dd>
+          </>
+        ) : null}
         <dt>To reach target</dt>
         <dd className="text-right text-fg">
           {order === null ? "Nothing to order" : `${order} units`}
         </dd>
         <dt>Target</dt>
         <dd className="text-right text-fg">{product.targetStock || "None"}</dd>
-        <dt>Alert at</dt>
+        <dt>{t("Alert at")}</dt>
         <dd className="text-right text-fg">{product.lowStockThreshold}</dd>
+        <dt>Cost / selling price</dt>
+        <dd className="text-right text-fg">
+          {product.costPrice ? formatMoney(product.costPrice) : "None"} /{" "}
+          {product.sellPrice ? formatMoney(product.sellPrice) : "None"}
+        </dd>
+        {product.packSize && product.packSize > 1 ? (
+          <>
+            <dt>Carton</dt>
+            <dd className="text-right text-fg">{product.packSize} units</dd>
+          </>
+        ) : null}
+        {product.expiryDate ? (
+          <>
+            <dt>Expiry</dt>
+            <dd className="text-right text-fg">{product.expiryDate}</dd>
+          </>
+        ) : null}
         <dt>SKU</dt>
         <dd className="truncate text-right text-fg">{product.sku || "None"}</dd>
       </dl>
-      <div className="mt-4 flex gap-4">
-        <button className="btn-link" onClick={onEdit}>
-          Edit details
-        </button>
-        <button className="btn-link" onClick={onDelete}>
-          Delete
-        </button>
-      </div>
+      {canManage && (
+        <div className="mt-4 flex gap-4">
+          <button className="btn-link" onClick={onEdit}>
+            {t("Edit details")}
+          </button>
+          <button className="btn-link" onClick={onDelete}>
+            {t("Delete")}
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -249,9 +323,15 @@ function ProductForm({
           lowStockThreshold: product.lowStockThreshold,
           targetStock: product.targetStock ?? 0,
           supplier: product.supplier ?? "",
+          unit: product.unit ?? "pcs",
+          packSize: product.packSize ?? 1,
+          expiryDate: product.expiryDate ?? "",
         }
       : emptyInput,
   );
+  const asRupees = (paise?: number) => (paise ? String(paise / 100) : "");
+  const [cost, setCost] = useState(asRupees(product?.costPrice));
+  const [price, setPrice] = useState(asRupees(product?.sellPrice));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const categories = useMemo(
@@ -272,16 +352,25 @@ function ProductForm({
     try {
       const duplicate = duplicateProblem(input, products, product?.id);
       if (duplicate) throw new Error(duplicate);
-      const uid = auth.currentUser.uid;
+      const uid = shopId();
+      const costPrice = parseMoney(cost);
+      const sellPrice = parseMoney(price);
+      if (costPrice === null || sellPrice === null)
+        throw new Error("Prices must be amounts like 25 or 22.50.");
       const saved = {
         ...input,
         category: matchCategory(input.category, categories),
+        costPrice,
+        sellPrice,
       };
       const result = product
         ? await editProduct(db, uid, product.id, saved)
         : await createProduct(db, uid, saved);
       onNotice(
-        savedMessage(result, product ? "Product updated." : "Product added."),
+        savedMessage(
+          result,
+          product ? t("Product updated.") : t("Product added."),
+        ),
       );
       onDone();
     } catch (cause) {
@@ -303,7 +392,7 @@ function ProductForm({
           className="field"
           type={numeric ? "number" : "text"}
           min={numeric ? 0 : undefined}
-          step={numeric ? 1 : undefined}
+          step={numeric ? "any" : undefined}
           maxLength={key === "name" || key === "supplier" ? 100 : 60}
           value={input[key] ?? ""}
           onChange={(event) =>
@@ -333,14 +422,18 @@ function ProductForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       <h2 className="pr-10 text-heading font-semibold">
-        {product ? "Edit details" : "Add product"}
+        {product ? t("Edit details") : t("Add product")}
       </h2>
       {error && <Alert>{error}</Alert>}
-      {field("name", "Name")}
+      {field("name", t("Name"))}
       <div className="grid grid-cols-2 gap-4">
-        {field("category", "Category")}
-        {field("sku", "SKU (optional)", false, false)}
+        {field("category", t("Category"))}
+        {field("sku", t("SKU or barcode (optional)"), false, false)}
       </div>
+      <ScanButton
+        label={t("Scan barcode")}
+        onCode={(code) => setInput({ ...input, sku: code })}
+      />
       <datalist id="category-options">
         {categories.map((item) => (
           <option key={item} value={item} />
@@ -361,14 +454,68 @@ function ProductForm({
         </button>
       )}
       <div className="grid grid-cols-2 gap-4">
-        {!product && field("quantity", "Opening stock", true)}
-        {field("lowStockThreshold", "Alert at", true)}
-        {field("targetStock", "Target (0 for none)", true)}
+        {!product && field("quantity", t("Opening stock"), true)}
+        {field("lowStockThreshold", t("Alert at"), true)}
+        {field("targetStock", t("Target (0 for none)"), true)}
       </div>
-      {field("supplier", "Supplier (optional)", false, false)}
+      <div className="grid grid-cols-2 gap-4">
+        <label className="field-label">
+          Cost price, ₹ (optional)
+          <input
+            className="field tabular"
+            inputMode="decimal"
+            value={cost}
+            onChange={(event) => setCost(event.target.value)}
+          />
+        </label>
+        <label className="field-label">
+          Selling price, ₹ (optional)
+          <input
+            className="field tabular"
+            inputMode="decimal"
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+          />
+        </label>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <label className="field-label">
+          Sold by
+          <select
+            className="field"
+            value={input.unit}
+            onChange={(event) =>
+              setInput({ ...input, unit: event.target.value as Unit })
+            }
+          >
+            {units.map((item) => (
+              <option key={item} value={item}>
+                {item === "pcs"
+                  ? t("Pieces")
+                  : item === "kg"
+                    ? t("Kilograms")
+                    : t("Litres")}
+              </option>
+            ))}
+          </select>
+        </label>
+        {field("packSize", t("Units in a carton"), true)}
+      </div>
+      <label className="field-label">
+        Expiry date (optional)
+        <input
+          className="field"
+          type="date"
+          value={input.expiryDate ?? ""}
+          onChange={(event) =>
+            setInput({ ...input, expiryDate: event.target.value })
+          }
+        />
+      </label>
+      {field("supplier", t("Supplier (optional)"), false, false)}
       <div className="flex gap-2 pt-1">
         <button className="btn-accent flex-1" disabled={busy}>
-          {busy ? "Saving…" : product ? "Save details" : "Add product"}
+          {busy ? t("Saving…") : product ? t("Save details") : t("Add product")}
         </button>
         <button
           type="button"
@@ -376,7 +523,7 @@ function ProductForm({
           onClick={onCancel}
           disabled={busy}
         >
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </form>
@@ -401,8 +548,8 @@ function DeleteConfirm({
     setBusy(true);
     setError("");
     try {
-      const result = await removeProduct(db, auth.currentUser.uid, product.id);
-      onNotice(savedMessage(result, "Product deleted."));
+      const result = await removeProduct(db, shopId(), product.id);
+      onNotice(savedMessage(result, t("Product deleted.")));
       onDone();
     } catch (cause) {
       setError(errorText(cause));
@@ -425,14 +572,14 @@ function DeleteConfirm({
           onClick={confirm}
           disabled={busy}
         >
-          {busy ? "Deleting…" : "Delete product"}
+          {busy ? "Deleting…" : t("Delete product")}
         </button>
         <button
           className="btn-soft !rounded-full"
           onClick={onCancel}
           disabled={busy}
         >
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </div>
@@ -442,12 +589,14 @@ function DeleteConfirm({
 export function Sheet({
   panel,
   products,
+  canManage,
   onPanel,
   onClose,
   onNotice,
 }: {
   panel: Panel;
   products: Product[];
+  canManage: boolean;
   onPanel: (panel: Panel) => void;
   onClose: () => void;
   onNotice: (message: string) => void;
@@ -488,10 +637,12 @@ export function Sheet({
         aria-modal="true"
         aria-label={
           panel.kind === "create"
-            ? "Add product"
+            ? t("Add product")
             : panel.kind === "import"
               ? "Import products"
-              : (product?.name ?? "Product")
+              : panel.kind === "settings"
+                ? t("Settings")
+                : (product?.name ?? "Product")
         }
         className={`relative max-h-[92dvh] w-full overflow-y-auto rounded-t-[20px] bg-panel p-pad pb-[max(var(--size-pad),env(safe-area-inset-bottom))] sm:my-2 sm:mr-2 sm:max-h-none sm:max-w-md sm:rounded-panel sm:p-pad ${closing ? "sheet-closing" : "sheet"}`}
       >
@@ -517,6 +668,8 @@ export function Sheet({
               onDone={close}
               onNotice={onNotice}
             />
+          ) : panel.kind === "settings" ? (
+            <SettingsPanel onDone={close} onNotice={onNotice} />
           ) : !product ? (
             <p className="hint">This product no longer exists.</p>
           ) : panel.kind === "edit" ? (
@@ -537,6 +690,7 @@ export function Sheet({
           ) : (
             <StockForm
               product={product}
+              canManage={canManage}
               onEdit={() => onPanel({ kind: "edit", id: product.id })}
               onDelete={() => onPanel({ kind: "delete", id: product.id })}
               onDone={close}

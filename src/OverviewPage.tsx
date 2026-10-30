@@ -2,15 +2,21 @@ import { useMemo } from "react";
 import { signed, useNow } from "./display";
 import {
   categoryTotals,
+  expiringSoon,
+  formatMoney,
   inventorySummary,
+  salesSummary,
   statusOf,
+  stockValue,
   suggestedReorder,
   unitsByDay,
+  type Customer,
   type Movement,
   type Product,
 } from "./inventory";
 import { StockChart } from "./StockChart";
 import { Alert, Changes, Ticker } from "./ui";
+import { t } from "./i18n";
 
 const chartDays = 14;
 
@@ -23,7 +29,9 @@ export function OverviewPage({
   products,
   movements,
   recentMovements,
+  customers,
   activityError,
+  canManage,
   onSelect,
   onAdd,
   onImport,
@@ -32,6 +40,8 @@ export function OverviewPage({
   products: Product[];
   movements: Movement[];
   recentMovements: Movement[];
+  customers: Customer[];
+  canManage: boolean;
   activityError: string;
   onSelect: (product: Product) => void;
   onAdd: () => void;
@@ -45,6 +55,38 @@ export function OverviewPage({
     [recentMovements, summary.units, now],
   );
   const categories = useMemo(() => categoryTotals(products), [products]);
+  const value = useMemo(() => stockValue(products), [products]);
+  const today = useMemo(
+    () =>
+      salesSummary(
+        recentMovements,
+        new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+        now,
+      ),
+    [recentMovements, now],
+  );
+  const week = useMemo(
+    () =>
+      salesSummary(
+        recentMovements,
+        new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6),
+        now,
+      ),
+    [recentMovements, now],
+  );
+  const expiring = useMemo(() => expiringSoon(products, now), [products, now]);
+  const unpricedSales = products.filter((item) => !item.sellPrice).length;
+  const owed = customers.reduce(
+    (sum, customer) => sum + Math.max(customer.balance, 0),
+    0,
+  );
+  const money = [
+    ["Stock value at cost", value.value],
+    ["Sales today", today.revenue],
+    ["Profit today", today.profit],
+    ["Sales, last 7 days", week.revenue],
+    ...(owed > 0 ? ([["Customers owe", owed]] as const) : []),
+  ] as const;
   const lowItems = products
     .filter((product) => statusOf(product) !== "healthy")
     .sort((a, b) => a.quantity - b.quantity);
@@ -58,49 +100,55 @@ export function OverviewPage({
   if (products.length === 0)
     return (
       <section className="panel py-16 text-center">
-        <h2 className="text-heading font-semibold">Add your first product</h2>
+        <h2 className="text-heading font-semibold">
+          {t("Add your first product")}
+        </h2>
         <p className="hint mt-1.5">
           Your stock, reorders and changes will appear here.
         </p>
-        <div className="mt-5 flex justify-center gap-2">
-          <button className="btn-accent" onClick={onAdd}>
-            Add product
-          </button>
-          <button className="btn-soft !rounded-full" onClick={onImport}>
-            Import CSV
-          </button>
-        </div>
+        {canManage && (
+          <div className="mt-5 flex justify-center gap-2">
+            <button className="btn-accent" onClick={onAdd}>
+              {t("Add product")}
+            </button>
+            <button className="btn-soft !rounded-full" onClick={onImport}>
+              {t("Import CSV")}
+            </button>
+          </div>
+        )}
       </section>
     );
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-gap md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
       <section className="panel">
-        <h1 className="text-body font-medium">Stock on hand</h1>
+        <h1 className="text-body font-medium">{t("Stock on hand")}</h1>
         <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5">
           <Ticker
             value={summary.units}
             countIn
             className="text-display font-medium tracking-tight"
           />
-          <span className="text-title font-medium text-muted">units</span>
+          <span className="text-title font-medium text-muted">
+            {t("units")}
+          </span>
         </p>
         <p className="tabular mt-3 inline-block rounded-full bg-accent/14 px-3 py-1 text-caption font-medium text-accent">
-          {signed(weekChange)} units in the last 7 days
+          {signed(weekChange)} {t("units in the last 7 days")}
         </p>
         <div className="hint mt-5 flex flex-wrap justify-between gap-x-3">
-          <span>Total units across all products</span>
-          <span>Last {chartDays} days</span>
+          <span>{t("Total units across all products")}</span>
+          <span>{t("Last 14 days")}</span>
         </div>
         <StockChart days={days} />
       </section>
 
       <section className="panel flex flex-col">
-        <h2 className="heading">To reorder</h2>
+        <h2 className="heading">{t("To reorder")}</h2>
         <p className="hint mt-0.5">
           {lowItems.length
-            ? `${lowItems.length} ${lowItems.length === 1 ? "product" : "products"} at or below their alert level`
-            : "Every product is above its alert level"}
+            ? `${lowItems.length} ${t(lowItems.length === 1 ? "product is at or below its alert level" : "products are at or below their alert level")}`
+            : t("Every product is above its alert level")}
         </p>
         {lowItems.length > 0 && (
           <div className="-mx-pad mt-3.5 flex-1 max-md:[&>button:nth-child(n+4)]:hidden">
@@ -114,7 +162,7 @@ export function OverviewPage({
                 >
                   <span className="truncate font-medium">{product.name}</span>
                   <span className="tabular text-right text-title font-semibold">
-                    {order ?? "–"}
+                    {order ?? (product.onOrder || "–")}
                   </span>
                   <span
                     className={`text-caption ${product.quantity ? "text-warn" : "text-loss"}`}
@@ -122,7 +170,11 @@ export function OverviewPage({
                     {reorderNote(product)}
                   </span>
                   <span className="hint text-right">
-                    {order === null ? "no target" : "to order"}
+                    {order !== null
+                      ? t("to order")
+                      : product.onOrder
+                        ? t("on order")
+                        : t("no target")}
                   </span>
                 </button>
               );
@@ -134,16 +186,70 @@ export function OverviewPage({
             className="btn-soft mt-3 w-full"
             onClick={() => onNavigate("Reorder")}
           >
-            Review order of {ordering.toLocaleString()} units
+            {ordering > 0
+              ? `Review order of ${ordering.toLocaleString()} units`
+              : "Review orders"}
           </button>
         )}
       </section>
 
+      {expiring.length > 0 && (
+        <section className="panel md:col-span-2">
+          <h2 className="heading">{t("Expiring soon")}</h2>
+          <p className="hint mt-0.5">Products with stock, next 30 days</p>
+          <div className="-mx-pad mt-3">
+            {expiring.slice(0, 5).map(({ product, days }) => (
+              <button
+                key={product.id}
+                className="btn-row flex w-full items-center justify-between gap-3 border-t border-line px-pad py-3"
+                onClick={() => onSelect(product)}
+              >
+                <span className="truncate font-medium">{product.name}</span>
+                <span
+                  className={`shrink-0 text-caption ${days < 0 ? "text-loss" : "text-warn"}`}
+                >
+                  {days < 0
+                    ? `Expired ${0 - days} ${days === -1 ? "day" : "days"} ago`
+                    : days === 0
+                      ? "Expires today"
+                      : `In ${days} ${days === 1 ? "day" : "days"}`}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="panel md:col-span-2">
+        <h2 className="heading">{t("Money")}</h2>
+        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-10">
+          {money.map(([label, amount]) => (
+            <div key={label} className="flex min-w-0 flex-col">
+              <dd className="tabular order-1 truncate text-heading font-semibold">
+                {formatMoney(amount)}
+              </dd>
+              <dt className="hint order-2">{t(label)}</dt>
+            </div>
+          ))}
+        </dl>
+        {(value.unpriced > 0 || unpricedSales > 0) && (
+          <p className="hint mt-3">
+            {value.unpriced > 0
+              ? `${value.unpriced} ${value.unpriced === 1 ? "product has" : "products have"} no cost price, so totals are low. `
+              : ""}
+            {unpricedSales > 0
+              ? `${unpricedSales} ${unpricedSales === 1 ? "product has" : "products have"} no selling price, so their sales aren't counted.`
+              : ""}
+          </p>
+        )}
+      </section>
+
       <section className="panel">
-        <h2 className="heading">Is the shop stocked?</h2>
+        <h2 className="heading">{t("Is the shop stocked?")}</h2>
         <p className="hint mt-0.5">
-          {summary.products} {summary.products === 1 ? "product" : "products"},
-          grouped by how much is left
+          {summary.products}{" "}
+          {t(summary.products === 1 ? "product" : "products")},{" "}
+          {t("grouped by how much is left")}
         </p>
         <div className="health mt-3.5" aria-hidden>
           <span className="bg-gain" style={{ flexGrow: healthy }} />
@@ -164,20 +270,20 @@ export function OverviewPage({
               </dd>
               <dt className="hint order-2 flex items-center gap-1.5">
                 <span className={`size-2 rounded-[3px] ${tone}`} />
-                {label}
+                {t(label)}
               </dt>
             </div>
           ))}
         </dl>
-        <h2 className="heading mt-6">Stock by category</h2>
+        <h2 className="heading mt-6">{t("Stock by category")}</h2>
         <div className="hint mt-3 mb-1.5 flex gap-4">
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-[3px] bg-accent" />
-            On hand
+            {t("On hand")}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-[3px] bg-[#30333a]" />
-            Room to target
+            {t("Room to target")}
           </span>
         </div>
         {categories.map(({ category, units, capacity }) => (
@@ -202,9 +308,9 @@ export function OverviewPage({
 
       <section className="panel">
         <div className="flex items-baseline justify-between">
-          <h2 className="heading">Stock changes</h2>
+          <h2 className="heading">{t("Stock changes")}</h2>
           <button className="btn-link" onClick={() => onNavigate("History")}>
-            See all
+            {t("See all")}
           </button>
         </div>
         {activityError ? (

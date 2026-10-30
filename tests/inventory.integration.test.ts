@@ -18,7 +18,14 @@ import {
   createProduct,
   createProducts,
   recordStockChanges,
+  addCustomer,
+  cancelOrder,
+  createInvite,
   fetchAllMovements,
+  joinShop,
+  markOrdered,
+  receiveOrder,
+  recordCredit,
   removeProduct,
   undoMovement,
   type Product,
@@ -312,4 +319,146 @@ describe("stock movement workflow", () => {
     await waitForPendingWrites(db);
     expect(await fetchAllMovements(db, "alice")).toHaveLength(60);
   }, 20000);
+
+  const pricedProduct = async (db: Parameters<typeof collection>[0]) => {
+    await createProduct(db, "alice", {
+      ...shelf,
+      name: "Pen",
+      quantity: 10,
+      costPrice: 800,
+      sellPrice: 1000,
+    });
+    return (await listProducts(db))[0];
+  };
+
+  it("saves revenue and profit with a sale, and takes them back on undo", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await pricedProduct(db);
+    await adjustStock(db, "alice", product.id, {
+      kind: "sale",
+      amount: 3,
+      note: "",
+    });
+    const sale = (await fetchAllMovements(db, "alice")).find(
+      (item) => item.kind === "sale",
+    )!;
+    expect(sale).toMatchObject({ revenue: 3000, profit: 600 });
+    await undoMovement(db, "alice", sale);
+    const undo = (await fetchAllMovements(db, "alice")).find(
+      (item) => item.kind === "undo",
+    );
+    expect(undo).toMatchObject({ revenue: -3000, profit: -600 });
+  });
+
+  it("counts the real amount when a sale passes the recorded stock", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await pricedProduct(db);
+    await recordStockChanges(db, "alice", [
+      {
+        product,
+        action: { kind: "sale", amount: 12, note: "", clampAtZero: true },
+      },
+    ]);
+    const sale = (await fetchAllMovements(db, "alice")).find(
+      (item) => item.kind === "sale",
+    );
+    expect(sale).toMatchObject({ change: -10, revenue: 12000 });
+  });
+
+  it("tracks an order from placed to received", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await pricedProduct(db);
+    await markOrdered(db, "alice", [{ id: product.id, units: 20 }]);
+    const [ordered] = await listProducts(db);
+    expect(ordered.onOrder).toBe(20);
+    await receiveOrder(db, "alice", [ordered]);
+    const [received] = await listProducts(db);
+    expect(received).toMatchObject({ quantity: 30, onOrder: 0 });
+  });
+
+  it("takes a part delivery off what is on order", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await pricedProduct(db);
+    await markOrdered(db, "alice", [{ id: product.id, units: 20 }]);
+    await adjustStock(db, "alice", product.id, {
+      kind: "restock",
+      amount: 5,
+      note: "",
+    });
+    expect((await listProducts(db))[0]).toMatchObject({
+      quantity: 15,
+      onOrder: 15,
+    });
+  });
+
+  it("cancels an order without touching stock", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await pricedProduct(db);
+    await markOrdered(db, "alice", [{ id: product.id, units: 20 }]);
+    await cancelOrder(db, "alice", [product.id]);
+    expect((await listProducts(db))[0]).toMatchObject({
+      quantity: 10,
+      onOrder: 0,
+    });
+  });
+
+  it("sells loose goods by weight without drifting", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    await createProduct(db, "alice", {
+      ...shelf,
+      name: "Rice",
+      unit: "kg",
+      quantity: 1,
+    });
+    let [rice] = await listProducts(db);
+    for (const amount of [0.1, 0.2]) {
+      await recordStockChanges(db, "alice", [
+        { product: rice, action: { kind: "sale", amount, note: "" } },
+      ]);
+      [rice] = await listProducts(db);
+    }
+    expect(rice.quantity).toBe(0.7);
+  });
+
+  it("sets a new expiry date with a delivery", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await oneProduct(db);
+    await adjustStock(db, "alice", product.id, {
+      kind: "restock",
+      amount: 5,
+      note: "",
+      expiryDate: "2027-01-15",
+    });
+    expect((await listProducts(db))[0].expiryDate).toBe("2027-01-15");
+  });
+
+  it("joins a shop with an invite code and refuses a bad one", async () => {
+    const owner = env.authenticatedContext("alice").firestore();
+    const staff = env
+      .authenticatedContext("bob", { email: "bob@shop.test" })
+      .firestore();
+    const code = await createInvite(owner, "alice");
+    expect(code).toMatch(/^[A-Z2-9]{8}$/);
+    await expect(
+      joinShop(staff, "bob", "bob@shop.test", "WRONG123"),
+    ).rejects.toThrow(/code/i);
+    await expect(joinShop(staff, "bob", "bob@shop.test", code)).resolves.toBe(
+      "alice",
+    );
+  });
+
+  it("tracks what a customer owes across credit and payment", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    await addCustomer(db, "alice", { name: "Ravi", phone: "" }, []);
+    const read = async () =>
+      (await getDocs(collection(db, "users/alice/customers"))).docs.map(
+        (item) => ({ id: item.id, ...item.data() }),
+      )[0] as { id: string; name: string; balance: number };
+    await recordCredit(db, "alice", await read(), 50000, "Groceries");
+    await recordCredit(db, "alice", await read(), -20000, "Paid cash");
+    expect((await read()).balance).toBe(30000);
+    await expect(
+      addCustomer(db, "alice", { name: " ravi ", phone: "" }, [await read()]),
+    ).rejects.toThrow(/already/);
+  });
 });

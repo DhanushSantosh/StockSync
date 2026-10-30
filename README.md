@@ -7,7 +7,13 @@ A real-time inventory app for a single shopkeeper. It helps answer three daily q
 - Add and edit products with SKU, category, supplier, low-stock alert level, and restock target, or import them from a CSV file.
 - Record receipts, sales, damaged/lost units, and physical stock counts. Record customer returns, and sales larger than the recorded count, which take stock to zero and note the real amount. Record a multi-item sale at once, or count the shelves at the end of the day and record what is missing as sold. Each write batch keeps the quantity and movement record together, and Security Rules reject negative stock.
 - Keep working offline. Changes are saved on the device and sync on reconnect, and the app can be installed on a phone.
-- Show a live reorder list with suggested quantities, supplier details, copyable text, and CSV download.
+- Show a live reorder list with suggested quantities, supplier details, copyable text, and CSV download. Mark orders as placed and received, so stock already on the way is not ordered twice.
+- Sell loose goods by kilogram or litre, receive stock by the carton, and see products nearing their expiry date.
+- Find products by SKU or barcode, with a USB scanner or the phone camera.
+- Give staff their own login with an invite code. Staff record stock but cannot change products or prices, and History shows who made each change.
+- Track what customers owe, on a sale or by hand, and record their payments.
+- Use the app in English or Hindi.
+- Track cost and selling prices in rupees for stock value, sales, and profit. Each sale keeps the amounts from when it happened.
 - Browse, search, filter, and export recent stock changes, including before/after quantities and optional notes.
 - See live stock totals, a 14-day chart, and stock alerts on multiple signed-in devices. Firebase Authentication also provides password-reset email.
 
@@ -73,4 +79,4 @@ Register an account, add a product with a restock target, and open StockSync in 
 
 ## Scope
 
-One account represents one shopkeeper and one inventory. Staff roles, shared inventories, product photos, payments, and forecasting are outside this mini-project. Offline changes are timestamped when they sync, not when they were made, and simultaneous changes from two devices keep the correct total but can show approximate before and after quantities in History. Cloud Storage and Cloud Functions require billing on the current Firebase Spark plan, so this app does not depend on them.
+One account owns one inventory, and staff join it by invite code. Product photos, card payments, and forecasting are outside this mini-project. Expiry is one date per product rather than per batch. Offline changes are timestamped when they sync, not when they were made, and simultaneous changes from two devices keep the correct total but can show approximate before and after quantities in History. Cloud Storage and Cloud Functions require billing on the current Firebase Spark plan, so this app does not depend on them.

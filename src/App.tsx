@@ -1,23 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import { onAuthStateChanged, signOut, type User } from "firebase/auth";
+import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   ClipboardList,
   CloudOff,
   History,
   LayoutDashboard,
-  LogOut,
   Package,
   Plus,
   ReceiptText,
+  Settings,
 } from "lucide-react";
 import { errorText } from "./display";
 import { auth, configured, db } from "./firebase";
 import {
+  forgetShop,
   onSyncFailure,
+  setShop,
   statusOf,
+  subscribeToCustomers,
+  subscribeToMembership,
   subscribeToMovements,
   subscribeToProducts,
   subscribeToRecentMovements,
+  type Customer,
   type Movement,
   type Product,
 } from "./inventory";
@@ -29,6 +34,7 @@ import { RecordPage } from "./RecordPage";
 import { ReorderPage } from "./ReorderPage";
 import { Sheet, type Panel } from "./Sheet";
 import { Alert } from "./ui";
+import { t } from "./i18n";
 
 const pages = ["Overview", "Record", "Products", "Reorder", "History"] as const;
 type Page = (typeof pages)[number];
@@ -44,6 +50,8 @@ function AppShell({ user }: { user: User }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [recentMovements, setRecentMovements] = useState<Movement[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [shop, setShopId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [activityError, setActivityError] = useState("");
@@ -59,6 +67,7 @@ function AppShell({ user }: { user: User }) {
   const select = (product: Product) =>
     setPanel({ kind: "stock", id: product.id });
   const add = () => setPanel({ kind: "create" });
+  const canManage = shop === user.uid;
   const importProducts = () => setPanel({ kind: "import" });
   const [offline, setOffline] = useState(() => navigator.onLine === false);
 
@@ -77,28 +86,44 @@ function AppShell({ user }: { user: User }) {
 
   useEffect(() => {
     if (!db) return;
+    return subscribeToMembership(db, user.uid, (owner) => {
+      const id = owner ?? user.uid;
+      setShop(id, user.email ?? "");
+      setShopId(id);
+    });
+  }, [user.uid, user.email]);
+
+  useEffect(() => {
+    if (!db || !shop) return;
+    return subscribeToCustomers(db, shop, setCustomers, () => {});
+  }, [shop]);
+
+  useEffect(() => {
+    if (!db || !shop) return;
     return subscribeToProducts(
       db,
-      user.uid,
+      shop,
       (items) => {
         setProducts(items);
         setLoading(false);
         setLoadError("");
       },
       (message) => {
-        setLoadError(`Inventory failed to load: ${message}`);
+        // A removed staff member falls back to their own shop.
+        if (db && shop !== user.uid) forgetShop(db, user.uid);
+        else setLoadError(`Inventory failed to load: ${message}`);
         setLoading(false);
       },
     );
-  }, [user.uid]);
+  }, [shop, user.uid]);
 
   useEffect(() => {
-    if (!db) return;
+    if (!db || !shop) return;
     const onError = (message: string) =>
       setActivityError(`Stock changes failed to load: ${message}`);
     const stopList = subscribeToMovements(
       db,
-      user.uid,
+      shop,
       historySize,
       (items) => {
         setMovements(items);
@@ -108,7 +133,7 @@ function AppShell({ user }: { user: User }) {
     );
     const stopChart = subscribeToRecentMovements(
       db,
-      user.uid,
+      shop,
       14,
       setRecentMovements,
       onError,
@@ -117,7 +142,7 @@ function AppShell({ user }: { user: User }) {
       stopList();
       stopChart();
     };
-  }, [user.uid, historySize]);
+  }, [shop, historySize]);
 
   useEffect(() => {
     if (!notice) return;
@@ -175,36 +200,39 @@ function AppShell({ user }: { user: User }) {
               aria-current={page === item ? "page" : undefined}
               onClick={() => setPage(item)}
             >
-              {item}
+              {t(item)}
               {item === "Reorder" && attention > 0 && (
                 <span className="tabular ml-1.5 text-accent">{attention}</span>
               )}
             </button>
           ))}
         </nav>
+        {canManage && (
+          <button
+            className="btn-accent max-md:ml-auto max-md:!min-h-11 max-md:size-11 max-md:!p-0"
+            aria-label={t("Add product")}
+            onClick={add}
+          >
+            <Plus size={16} />
+            <span className="max-md:hidden">{t("Add product")}</span>
+          </button>
+        )}
         <button
-          className="btn-accent max-md:ml-auto max-md:!min-h-11 max-md:size-11 max-md:!p-0"
-          aria-label="Add product"
-          onClick={add}
+          className={`flex size-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-panel hover:text-fg ${canManage ? "" : "max-md:ml-auto"}`}
+          aria-label={t("Settings")}
+          title={t("Settings")}
+          onClick={() => setPanel({ kind: "settings" })}
         >
-          <Plus size={16} />
-          <span className="max-md:hidden">Add product</span>
-        </button>
-        <button
-          className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-panel hover:text-fg"
-          aria-label="Sign out"
-          title={`Sign out ${user.email ?? ""}`}
-          onClick={() => auth && signOut(auth)}
-        >
-          <LogOut size={17} />
+          <Settings size={18} />
         </button>
       </header>
       <main id="content" ref={content} tabIndex={-1} className="outline-none">
         {offline && (
           <p className="page mb-4 flex items-center gap-2 rounded-control bg-warn/10 px-3.5 py-2.5 text-warn">
             <CloudOff size={16} className="shrink-0" />
-            You're offline. Changes are saved on this device and sync when
-            you're back.
+            {t(
+              "You're offline. Changes are saved on this device and sync when you're back.",
+            )}
           </p>
         )}
         {loadError && (
@@ -220,13 +248,15 @@ function AppShell({ user }: { user: User }) {
         ) : (
           <div key={page} className="page">
             {page !== "Overview" && (
-              <h1 className="mb-gap text-heading font-semibold">{page}</h1>
+              <h1 className="mb-gap text-heading font-semibold">{t(page)}</h1>
             )}
             {page === "Overview" ? (
               <OverviewPage
                 products={products}
                 movements={movements}
                 recentMovements={recentMovements}
+                customers={customers}
+                canManage={canManage}
                 activityError={activityError}
                 onSelect={select}
                 onAdd={add}
@@ -239,11 +269,20 @@ function AppShell({ user }: { user: User }) {
                 onSelect={select}
                 onAdd={add}
                 onImport={importProducts}
+                canManage={canManage}
               />
             ) : page === "Record" ? (
-              <RecordPage products={products} onNotice={setNotice} />
+              <RecordPage
+                products={products}
+                customers={customers}
+                onNotice={setNotice}
+              />
             ) : page === "Reorder" ? (
-              <ReorderPage products={products} onSelect={select} />
+              <ReorderPage
+                products={products}
+                onSelect={select}
+                onNotice={setNotice}
+              />
             ) : (
               <HistoryPage
                 movements={movements}
@@ -271,12 +310,12 @@ function AppShell({ user }: { user: User }) {
                   <span className="tab-main">
                     <Icon size={19} />
                   </span>
-                  <span className="tab-label">{item}</span>
+                  <span className="tab-label">{t(item)}</span>
                 </>
               ) : (
                 <>
                   <Icon size={21} />
-                  <span className="tab-label">{item}</span>
+                  <span className="tab-label">{t(item)}</span>
                   {item === "Reorder" && attention > 0 && (
                     <span className="tab-count">{attention}</span>
                   )}
@@ -291,6 +330,7 @@ function AppShell({ user }: { user: User }) {
           key={"id" in panel ? panel.id : panel.kind}
           panel={panel}
           products={products}
+          canManage={canManage}
           onPanel={setPanel}
           onClose={() => setPanel(null)}
           onNotice={setNotice}

@@ -6,6 +6,7 @@ import {
 } from "firebase/auth";
 import { auth } from "./firebase";
 import { Alert } from "./ui";
+import { t } from "./i18n";
 
 export function AuthScreen() {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -78,7 +79,7 @@ export function AuthScreen() {
       <section key={mode} className="panel page w-full max-w-sm">
         <p className="text-title font-semibold tracking-tight">StockSync</p>
         <h1 className="mt-6 text-heading leading-tight font-semibold">
-          {mode === "login" ? "Sign in" : "Create account"}
+          {mode === "login" ? t("Sign in") : t("Create account")}
         </h1>
         <form onSubmit={submit} className="mt-5 space-y-4">
           {error && <Alert>{error}</Alert>}
@@ -112,8 +113,8 @@ export function AuthScreen() {
             {busy
               ? "Please wait…"
               : mode === "login"
-                ? "Sign in"
-                : "Create account"}
+                ? t("Sign in")
+                : t("Create account")}
           </button>
         </form>
         <div className="mt-4 flex justify-between">
@@ -124,7 +125,7 @@ export function AuthScreen() {
               setError("");
             }}
           >
-            {mode === "login" ? "Create account" : "Sign in instead"}
+            {mode === "login" ? t("Create account") : t("Sign in instead")}
           </button>
           {mode === "login" && (
             <button
@@ -133,7 +134,7 @@ export function AuthScreen() {
               onClick={resetPassword}
               disabled={busy}
             >
-              Reset password
+              {t("Reset password")}
             </button>
           )}
         </div>

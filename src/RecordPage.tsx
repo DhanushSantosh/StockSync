@@ -1,13 +1,25 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { ChevronUp, Minus, Plus, Search, X } from "lucide-react";
+import { BarcodeButton } from "./BarcodeButton";
+import { CreditForm } from "./CreditForm";
 import { errorText, savedMessage, useFocusTrap } from "./display";
 import { auth, db } from "./firebase";
 import {
+  findByCode,
+  formatMoney,
+  formatQuantity,
+  recordCredit,
   recordStockChanges,
+  roundQuantity,
+  shopId,
+  unitSuffix,
+  validQuantity,
+  type Customer,
   type Product,
   type StockChange,
 } from "./inventory";
 import { Alert, Ticker } from "./ui";
+import { t } from "./i18n";
 
 function matches(product: Product, search: string) {
   return `${product.name} ${product.sku}`
@@ -32,8 +44,8 @@ function SearchBox({
       />
       <input
         className="field !mt-0 !pl-10"
-        aria-label="Find a product"
-        placeholder="Find a product"
+        aria-label={t("Find a product")}
+        placeholder={t("Find a product")}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
@@ -49,11 +61,15 @@ function SearchBox({
 
 function SaleForm({
   products,
+  customers,
   onNotice,
 }: {
   products: Product[];
+  customers: Customer[];
   onNotice: (message: string) => void;
 }) {
+  const [creditTo, setCreditTo] = useState("");
+  const [scanMiss, setScanMiss] = useState("");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [note, setNote] = useState("");
@@ -62,10 +78,16 @@ function SaleForm({
   const [reviewing, setReviewing] = useState(false);
   const results = products.filter((product) => matches(product, search));
   const lines = products
-    .filter((product) => cart[product.id])
+    .filter((product) => cart[product.id] !== undefined)
     .map((product) => ({ product, amount: cart[product.id] }));
-  const units = lines.reduce((sum, line) => sum + line.amount, 0);
+  const units = roundQuantity(
+    lines.reduce((sum, line) => sum + line.amount, 0),
+  );
   const open = reviewing && lines.length > 0;
+  const total = lines.reduce(
+    (sum, { product, amount }) => sum + amount * (product.sellPrice ?? 0),
+    0,
+  );
   const review = useRef<HTMLDivElement>(null);
   useFocusTrap(review, open);
 
@@ -75,6 +97,9 @@ function SaleForm({
     else delete next[product.id];
     setCart(next);
   }
+  // Stays at 0 while someone is still typing 0.5.
+  const typeAmount = (product: Product, amount: number) =>
+    setCart({ ...cart, [product.id]: amount });
   function add(product?: Product) {
     if (!product) return;
     setAmount(product, (cart[product.id] ?? 0) + 1);
@@ -87,23 +112,25 @@ function SaleForm({
     setBusy(true);
     setError("");
     try {
-      const changes: StockChange[] = lines.map(({ product, amount }) => ({
-        product,
-        action: { kind: "sale", amount, note, clampAtZero: true },
-      }));
-      const result = await recordStockChanges(
-        db,
-        auth.currentUser.uid,
-        changes,
-      );
+      const changes: StockChange[] = lines
+        .filter(({ amount }) => amount > 0)
+        .map(({ product, amount }) => ({
+          product,
+          action: { kind: "sale", amount, note, clampAtZero: true },
+        }));
+      const result = await recordStockChanges(db, shopId(), changes);
       onNotice(
         savedMessage(
           result,
           `Sale of ${units} ${units === 1 ? "unit" : "units"} recorded.`,
         ),
       );
+      const customer = customers.find((item) => item.id === creditTo);
+      if (customer && total > 0)
+        await recordCredit(db, shopId(), customer, Math.round(total), "Sale");
       setCart({});
       setNote("");
+      setCreditTo("");
       setReviewing(false);
     } catch (cause) {
       setError(errorText(cause));
@@ -119,8 +146,19 @@ function SaleForm({
           <SearchBox
             value={search}
             onChange={setSearch}
-            onEnter={() => add(results[0])}
+            onEnter={() => add(findByCode(products, search) ?? results[0])}
           />
+          <div className="mt-2 flex items-center gap-3">
+            <BarcodeButton
+              label={t("Scan barcode")}
+              onCode={(code) => {
+                const found = findByCode(products, code);
+                setScanMiss(found ? "" : `No product has the code ${code}.`);
+                add(found);
+              }}
+            />
+            {scanMiss && <p className="hint">{scanMiss}</p>}
+          </div>
         </div>
         <div className="md:max-h-[28rem] md:overflow-y-auto">
           {results.map((product) => (
@@ -135,8 +173,8 @@ function SaleForm({
                 </span>
                 <span className="hint tabular block">
                   {product.quantity === 0
-                    ? "Sold out"
-                    : `${product.quantity} on hand`}
+                    ? t("Sold out")
+                    : `${formatQuantity(product.quantity)}${unitSuffix(product)} on hand`}
                 </span>
               </span>
               {cart[product.id] ? (
@@ -167,7 +205,8 @@ function SaleForm({
           className="btn-accent row-in fixed inset-x-3 bottom-[calc(var(--tabbar)+0.5rem)] z-30 !justify-between !rounded-control md:hidden"
           onClick={() => setReviewing(true)}
         >
-          {units} {units === 1 ? "unit" : "units"} in this sale
+          {units} {units === 1 ? "unit" : "units"}
+          {total > 0 ? `, ${formatMoney(total)}` : " in this sale"}
           <span className="flex items-center gap-1">
             Review
             <ChevronUp size={17} />
@@ -178,7 +217,7 @@ function SaleForm({
         ref={review}
         role={open ? "dialog" : undefined}
         aria-modal={open || undefined}
-        aria-label={open ? "This sale" : undefined}
+        aria-label={open ? t("This sale") : undefined}
         onKeyDown={(event) => {
           if (event.key === "Escape") setReviewing(false);
         }}
@@ -186,7 +225,7 @@ function SaleForm({
       >
         <form onSubmit={submit} className="flex flex-col">
           <div className="flex items-center justify-between">
-            <h2 className="heading">This sale</h2>
+            <h2 className="heading">{t("This sale")}</h2>
             <button
               type="button"
               className="-mr-2 flex size-11 items-center justify-center text-muted md:hidden"
@@ -197,7 +236,7 @@ function SaleForm({
             </button>
           </div>
           {lines.length === 0 ? (
-            <p className="hint mt-1">Tap products to add them.</p>
+            <p className="hint mt-1">{t("Tap products to add them.")}</p>
           ) : (
             <div className="mt-2">
               {lines.map(({ product, amount }) => (
@@ -211,7 +250,8 @@ function SaleForm({
                     </span>
                     {amount > product.quantity && (
                       <span className="block text-caption text-warn">
-                        {product.quantity} on hand, stock goes to 0
+                        {formatQuantity(product.quantity)}
+                        {unitSuffix(product)} on hand, stock goes to 0
                       </span>
                     )}
                   </span>
@@ -226,10 +266,13 @@ function SaleForm({
                   <input
                     className="tabular h-11 w-12 shrink-0 rounded-control bg-ink text-center text-[max(1rem,var(--size-body))] ring-1 ring-outline outline-none focus:ring-2 focus:ring-accent md:h-9"
                     aria-label={`Units of ${product.name}`}
-                    inputMode="numeric"
+                    type="number"
+                    step="any"
+                    min={0}
+                    inputMode="decimal"
                     value={amount}
                     onChange={(event) =>
-                      setAmount(product, Number(event.target.value) || 0)
+                      typeAmount(product, Number(event.target.value) || 0)
                     }
                   />
                   <button
@@ -252,6 +295,29 @@ function SaleForm({
               ))}
             </div>
           )}
+          {total > 0 && (
+            <div className="mt-3 flex justify-between text-title font-semibold">
+              <span>{t("Total")}</span>
+              <span className="tabular">{formatMoney(total)}</span>
+            </div>
+          )}
+          {customers.length > 0 && total > 0 && (
+            <label className="field-label mt-4">
+              Payment
+              <select
+                className="field"
+                value={creditTo}
+                onChange={(event) => setCreditTo(event.target.value)}
+              >
+                <option value="">{t("Paid now")}</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    On credit: {customer.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="field-label mt-4">
             Note (optional)
             <input
@@ -271,10 +337,10 @@ function SaleForm({
             disabled={busy || lines.length === 0}
           >
             {busy
-              ? "Recording…"
+              ? t("Recording…")
               : lines.length
                 ? `Record sale of ${units} ${units === 1 ? "unit" : "units"}`
-                : "Record sale"}
+                : t("Record sale")}
           </button>
         </form>
       </div>
@@ -305,9 +371,7 @@ function CountForm({
     [products, counts],
   );
   const invalid = changed.some(
-    (product) =>
-      !Number.isSafeInteger(Number(counts[product.id])) ||
-      Number(counts[product.id]) < 0,
+    (product) => !validQuantity(Number(counts[product.id]), product),
   );
 
   async function submit(event: FormEvent) {
@@ -327,11 +391,7 @@ function CountForm({
               : { kind: "correction", amount: counted, note },
         };
       });
-      const result = await recordStockChanges(
-        db,
-        auth.currentUser.uid,
-        changes,
-      );
+      const result = await recordStockChanges(db, shopId(), changes);
       onNotice(
         savedMessage(
           result,
@@ -351,7 +411,9 @@ function CountForm({
       <div className="px-pad pb-3">
         <SearchBox value={search} onChange={setSearch} />
         <p className="hint mt-2.5">
-          Enter what is on the shelf. Leave a product blank to keep its stock.
+          {t(
+            "Enter what is on the shelf. Leave a product blank to keep its stock.",
+          )}
         </p>
       </div>
       {visible.map((product) => {
@@ -365,7 +427,8 @@ function CountForm({
             <span className="min-w-0">
               <span className="block truncate font-medium">{product.name}</span>
               <span className="hint tabular block">
-                <Ticker value={product.quantity} /> expected
+                <Ticker value={product.quantity} />
+                {unitSuffix(product)} expected
               </span>
             </span>
             <span
@@ -379,9 +442,9 @@ function CountForm({
               className="tabular h-control w-full rounded-control bg-ink px-3 text-right text-[max(1rem,var(--size-body))] ring-1 ring-outline outline-none focus:ring-2 focus:ring-accent"
               aria-label={`Counted units of ${product.name}`}
               type="number"
-              inputMode="numeric"
+              inputMode="decimal"
               min={0}
-              step={1}
+              step="any"
               value={value}
               onChange={(event) =>
                 setCounts({ ...counts, [product.id]: event.target.value })
@@ -403,39 +466,41 @@ function CountForm({
             checked={missingSold}
             onChange={(event) => setMissingSold(event.target.checked)}
           />
-          Record missing units as sold
+          {t("Record missing units as sold")}
         </label>
         <button
           className="btn-accent mt-3 w-full"
           disabled={busy || invalid || changed.length === 0}
         >
           {busy
-            ? "Saving…"
+            ? t("Saving…")
             : changed.length
               ? `Save count for ${changed.length} ${changed.length === 1 ? "product" : "products"}`
-              : "Save count"}
+              : t("Save count")}
         </button>
       </div>
     </form>
   );
 }
 
-const modes = ["Sale", "End-of-day count"] as const;
+const modes = ["Sale", "Count", "Credit"] as const;
 
 export function RecordPage({
   products,
+  customers,
   onNotice,
 }: {
   products: Product[];
+  customers: Customer[];
   onNotice: (message: string) => void;
 }) {
   const [mode, setMode] = useState<(typeof modes)[number]>("Sale");
   const index = modes.indexOf(mode);
   return (
     <div className="mx-auto max-w-5xl space-y-gap">
-      <div className="choice mx-auto w-full max-w-sm !grid-cols-2">
+      <div className="choice mx-auto w-full max-w-sm !grid-cols-3">
         <span
-          className="choice-pill !w-[calc(50%-4px)]"
+          className="choice-pill !w-[calc((100%-0.5rem)/3)]"
           style={{ transform: `translateX(${index * 100}%)` }}
         />
         {modes.map((item) => (
@@ -445,16 +510,22 @@ export function RecordPage({
             aria-pressed={mode === item}
             onClick={() => setMode(item)}
           >
-            {item}
+            {t(item)}
           </button>
         ))}
       </div>
-      {products.length === 0 ? (
+      {mode === "Credit" ? (
+        <CreditForm customers={customers} onNotice={onNotice} />
+      ) : products.length === 0 ? (
         <section className="panel hint py-14 text-center">
           Add products before recording stock.
         </section>
       ) : mode === "Sale" ? (
-        <SaleForm products={products} onNotice={onNotice} />
+        <SaleForm
+          products={products}
+          customers={customers}
+          onNotice={onNotice}
+        />
       ) : (
         <CountForm products={products} onNotice={onNotice} />
       )}

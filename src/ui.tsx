@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { signed, useNow, useTick } from "./display";
 import {
   canUndo,
+  formatMoney,
   groupByDay,
   movementLabels,
   statusOf,
@@ -9,6 +10,7 @@ import {
   type Movement,
   type Product,
 } from "./inventory";
+import { t } from "./i18n";
 
 const prefersReducedMotion = () =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -25,7 +27,8 @@ function useCountUp(value: number, startFrom: number) {
     const tick = (now: number) => {
       const progress = duration ? Math.min((now - startedAt) / duration, 1) : 1;
       const eased = 1 - (1 - progress) ** 3;
-      current.current = Math.round(start + (value - start) * eased);
+      current.current =
+        Math.round((start + (value - start) * eased) * 1000) / 1000;
       setShown(current.current);
       if (progress < 1) frame = requestAnimationFrame(tick);
     };
@@ -48,7 +51,7 @@ export function Ticker({
   const tick = useTick(value);
   return (
     <span key={tick.id} className={`ticker ${tick.direction} ${className}`}>
-      {shown.toLocaleString()}
+      {shown.toLocaleString("en-IN")}
     </span>
   );
 }
@@ -65,14 +68,14 @@ export function Alert({ children }: { children: ReactNode }) {
 }
 
 const statusText = {
-  healthy: { label: "Enough", tone: "text-gain" },
-  low: { label: "Running low", tone: "text-warn" },
-  out: { label: "Sold out", tone: "text-loss" },
+  healthy: { label: t("Enough"), tone: "text-gain" },
+  low: { label: t("Running low"), tone: "text-warn" },
+  out: { label: t("Sold out"), tone: "text-loss" },
 };
 
 export function Status({ product }: { product: Product }) {
   const { label, tone } = statusText[statusOf(product)];
-  return <span className={`text-caption ${tone}`}>{label}</span>;
+  return <span className={`text-caption ${tone}`}>{t(label)}</span>;
 }
 
 // These kinds get a fixed note that only repeats their label.
@@ -101,14 +104,16 @@ function ChangeRow({
         {signed(movement.change)}
       </span>
       <span className="hint truncate">
-        {movementLabels[movement.kind]}
+        {t(movementLabels[movement.kind])}
         {movement.note && !autoNoted.includes(movement.kind)
           ? `, ${movement.note}`
           : ""}
+        {movement.revenue ? `, ${formatMoney(movement.revenue)}` : ""}
         {undone ? ", undone" : ""}
+        {movement.by ? `, ${movement.by.split("@")[0]}` : ""}
       </span>
       <span className="hint tabular text-right">
-        {movement.quantityAfter} left
+        {movement.quantityAfter} {t("left")}
       </span>
     </>
   );
@@ -143,7 +148,8 @@ export function Changes({
           <div className="hint flex justify-between pt-3.5 pb-1">
             <span>{group.label}</span>
             <span className="tabular">
-              {signed(group.net)} {Math.abs(group.net) === 1 ? "unit" : "units"}
+              {signed(group.net)}{" "}
+              {t(Math.abs(group.net) === 1 ? "unit" : "units")}
             </span>
           </div>
           {group.movements.map((movement) => {
@@ -176,13 +182,13 @@ export function Changes({
                         onUndo(movement);
                       }}
                     >
-                      Undo this change
+                      {t("Undo this change")}
                     </button>
                     <button
                       className="btn-soft"
                       onClick={() => setSelected(null)}
                     >
-                      Keep
+                      {t("Keep")}
                     </button>
                   </div>
                 )}

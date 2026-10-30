@@ -1,12 +1,15 @@
 import {
   matchCategory,
+  parseMoney,
+  units,
   validateProduct,
   type Product,
   type ProductInput,
 } from "./inventory";
 
-export const templateCsv = `Name,Category,Quantity,SKU,Alert at,Target,Supplier
-Parle-G 250g,Snacks,24,BIS-250,12,48,Sri Balaji Agencies
+export const templateCsv = `Name,Category,Quantity,SKU,Alert at,Target,Supplier,Cost,Price,Unit,Pack size,Expiry
+Parle-G 250g,Snacks,24,BIS-250,12,48,Sri Balaji Agencies,22.50,25,pcs,24,2027-03-31
+Basmati Rice,Grocery,12.5,,5,50,,62,75,kg,25,
 `;
 
 const columns: Record<string, string[]> = {
@@ -17,6 +20,11 @@ const columns: Record<string, string[]> = {
   alert: ["alert at", "alert", "low stock", "low stock alert"],
   target: ["target", "restock target"],
   supplier: ["supplier", "vendor"],
+  cost: ["cost", "cost price", "buying price"],
+  price: ["price", "selling price", "sell price", "mrp"],
+  unit: ["unit", "units"],
+  pack: ["pack size", "pack", "carton size"],
+  expiry: ["expiry", "expiry date", "exp"],
 };
 
 function readRows(text: string) {
@@ -84,6 +92,11 @@ export function parseProductsCsv(
     const value = (field: string) => (cells[position(field)] ?? "").trim();
     const number = (field: string, fallback: number) =>
       value(field) === "" ? fallback : Number(value(field));
+    const costPrice = parseMoney(value("cost"));
+    const sellPrice = parseMoney(value("price"));
+    const unit = units.find(
+      (item) => item.toLowerCase() === (value("unit") || "pcs").toLowerCase(),
+    );
     const row: ProductInput = {
       name: value("name"),
       category: matchCategory(value("category"), categories),
@@ -92,11 +105,23 @@ export function parseProductsCsv(
       lowStockThreshold: number("alert", 5),
       targetStock: number("target", 0),
       supplier: value("supplier"),
+      costPrice: costPrice ?? 0,
+      sellPrice: sellPrice ?? 0,
+      unit: unit ?? "pcs",
+      packSize: number("pack", 1),
+      expiryDate: value("expiry"),
     };
     const name = row.name.toLowerCase();
     const sku = row.sku.toLowerCase();
     const message =
       validateProduct(row, true) ??
+      (costPrice === null || sellPrice === null
+        ? "Cost and price must be amounts like 25 or 22.50."
+        : null) ??
+      (unit ? null : "Unit must be pcs, kg or L.") ??
+      (row.expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(row.expiryDate)
+        ? "Expiry must look like 2027-03-31."
+        : null) ??
       (names.has(name) || (sku && skus.has(sku))
         ? "Skipped: this product already exists or repeats in the file."
         : null);

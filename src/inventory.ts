@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocFromCache,
@@ -10,6 +11,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -17,6 +19,19 @@ import {
   type Timestamp,
   type WriteBatch,
 } from "firebase/firestore";
+
+// The shop being worked on, which is a staff member's employer's account.
+let activeShop = "";
+let actor = "";
+export const shopId = () => activeShop;
+export function setShop(shop: string, email: string) {
+  activeShop = shop;
+  actor = email;
+}
+const madeBy = () => (actor ? { by: actor } : {});
+
+export const units = ["pcs", "kg", "L"] as const;
+export type Unit = (typeof units)[number];
 
 export type Product = {
   id: string;
@@ -27,6 +42,13 @@ export type Product = {
   lowStockThreshold: number;
   targetStock?: number;
   supplier?: string;
+  // Prices are whole paise, so totals never pick up rounding errors.
+  costPrice?: number;
+  sellPrice?: number;
+  onOrder?: number;
+  unit?: Unit;
+  packSize?: number;
+  expiryDate?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 };
@@ -38,6 +60,11 @@ export type ProductInput = Pick<
   quantity?: number;
   targetStock: number;
   supplier: string;
+  costPrice?: number;
+  sellPrice?: number;
+  unit?: Unit;
+  packSize?: number;
+  expiryDate?: string;
 };
 
 export type MovementKind =
@@ -59,6 +86,10 @@ export type Movement = {
   quantityAfter: number;
   note: string;
   undoes?: string;
+  // Saved at the time, so later price changes don't rewrite past sales.
+  revenue?: number;
+  profit?: number;
+  by?: string;
   createdAt?: Timestamp;
 };
 
@@ -68,6 +99,8 @@ export type StockAction = {
   note: string;
   // Sold more than the count says: take stock to zero and keep the real amount.
   clampAtZero?: boolean;
+  // A delivery can bring a new expiry date.
+  expiryDate?: string;
 };
 
 export const movementLabels: Record<MovementKind, string> = {
@@ -81,6 +114,50 @@ export const movementLabels: Record<MovementKind, string> = {
   undo: "Undone",
 };
 
+export const roundQuantity = (amount: number) =>
+  Math.round(amount * 1000) / 1000;
+
+const isLoose = (product: { unit?: Unit }) =>
+  product.unit === "kg" || product.unit === "L";
+
+// Whole units for countable stock; up to 3 decimals for weight and volume.
+export function validQuantity(amount: number, product: { unit?: Unit }) {
+  if (!Number.isFinite(amount) || amount < 0) return false;
+  return isLoose(product)
+    ? roundQuantity(amount) === amount
+    : Number.isSafeInteger(amount);
+}
+
+export function formatQuantity(amount: number) {
+  return roundQuantity(amount).toLocaleString("en-IN");
+}
+
+export const unitSuffix = (product: { unit?: Unit }) =>
+  isLoose(product) ? ` ${product.unit}` : "";
+
+export const packsNeeded = (quantity: number, packSize: number) =>
+  Math.ceil(quantity / packSize);
+
+export function findByCode(products: Product[], code: string) {
+  const wanted = code.trim().toLowerCase();
+  if (!wanted) return undefined;
+  return products.find((product) => product.sku.toLowerCase() === wanted);
+}
+
+export function expiringSoon(products: Product[], now: Date, within = 30) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return products
+    .filter((product) => product.expiryDate && product.quantity > 0)
+    .map((product) => {
+      const [year, month, day] = product.expiryDate!.split("-").map(Number);
+      const expiry = new Date(year, month - 1, day);
+      const days = Math.round((expiry.getTime() - today.getTime()) / 86400000);
+      return { product, days };
+    })
+    .filter(({ days }) => days <= within)
+    .sort((a, b) => a.days - b.days);
+}
+
 export function statusOf(product: Product): "out" | "low" | "healthy" {
   if (product.quantity === 0) return "out";
   return product.quantity <= product.lowStockThreshold ? "low" : "healthy";
@@ -90,7 +167,64 @@ export function suggestedReorder(product: Product): number | null {
   if (statusOf(product) === "healthy") return null;
   if (!product.targetStock || product.targetStock <= product.quantity)
     return null;
-  return product.targetStock - product.quantity;
+  const needed =
+    product.targetStock - product.quantity - (product.onOrder ?? 0);
+  return needed > 0 ? needed : null;
+}
+
+const rupees = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 2,
+});
+const wholeRupees = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 0,
+});
+
+export function formatMoney(paise: number) {
+  const format = paise % 100 === 0 ? wholeRupees : rupees;
+  const text = format.format(Math.abs(paise) / 100);
+  return paise < 0 ? `−${text}` : text;
+}
+
+// Whole paise from what someone typed: blank is 0, nonsense is null.
+export function parseMoney(text: string) {
+  const cleaned = text.replace(/[₹,\s]/g, "");
+  if (cleaned === "") return 0;
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  return Math.round(Number(cleaned) * 100);
+}
+
+export function stockValue(products: Product[]) {
+  return {
+    value: products.reduce(
+      (sum, product) => sum + product.quantity * (product.costPrice ?? 0),
+      0,
+    ),
+    unpriced: products.filter(
+      (product) => product.quantity > 0 && !product.costPrice,
+    ).length,
+  };
+}
+
+export function moneyForChange(
+  product: Pick<Product, "costPrice" | "sellPrice">,
+  kind: StockAction["kind"],
+  units: number,
+) {
+  if ((kind !== "sale" && kind !== "return") || !product.sellPrice) return {};
+  const signedUnits = kind === "sale" ? units : 0 - units;
+  const revenue = Math.round(signedUnits * product.sellPrice);
+  return product.costPrice
+    ? {
+        revenue,
+        profit: Math.round(
+          signedUnits * (product.sellPrice - product.costPrice),
+        ),
+      }
+    : { revenue };
 }
 
 // What a full shelf holds: sets a product's tile size and fill level.
@@ -106,7 +240,9 @@ export function shelfCapacity(product: Product): number {
 export function inventorySummary(products: Product[]) {
   return {
     products: products.length,
-    units: products.reduce((sum, product) => sum + product.quantity, 0),
+    units: roundQuantity(
+      products.reduce((sum, product) => sum + product.quantity, 0),
+    ),
     low: products.filter((product) => statusOf(product) === "low").length,
     out: products.filter((product) => statusOf(product) === "out").length,
   };
@@ -133,7 +269,7 @@ export function unitsByDay(
     const changedSince = movements
       .filter((movement) => movedAt(movement, now) >= nextDay)
       .reduce((sum, movement) => sum + movement.change, 0);
-    return { date, units: currentUnits - changedSince };
+    return { date, units: roundQuantity(currentUnits - changedSince) };
   });
 }
 
@@ -271,6 +407,20 @@ export function canUndo(
   );
 }
 
+export function salesSummary(
+  movements: Pick<Movement, "createdAt" | "revenue" | "profit">[],
+  since: Date,
+  now: Date,
+) {
+  const inRange = movements.filter(
+    (movement) => movedAt(movement, now) >= since,
+  );
+  return {
+    revenue: inRange.reduce((sum, item) => sum + (item.revenue ?? 0), 0),
+    profit: inRange.reduce((sum, item) => sum + (item.profit ?? 0), 0),
+  };
+}
+
 export function validateProduct(
   input: ProductInput,
   creating: boolean,
@@ -282,19 +432,21 @@ export function validateProduct(
   if (input.sku.trim().length > 60) return "SKU must be at most 60 characters.";
   if (input.supplier.trim().length > 100)
     return "Supplier must be at most 100 characters.";
-  if (
-    !Number.isSafeInteger(input.lowStockThreshold) ||
-    input.lowStockThreshold < 0
-  )
+  if (!validQuantity(input.lowStockThreshold, input))
     return "Low stock threshold must be a nonnegative whole number.";
-  if (!Number.isSafeInteger(input.targetStock) || input.targetStock < 0)
+  if (!validQuantity(input.targetStock, input))
     return "Restock target must be a nonnegative whole number.";
+  if (
+    input.packSize !== undefined &&
+    (!Number.isSafeInteger(input.packSize) || input.packSize < 1)
+  )
+    return "Pack size must be a whole number of 1 or more.";
   if (input.targetStock > 0 && input.targetStock <= input.lowStockThreshold)
     return "Restock target must be above the low-stock alert level.";
-  if (
-    creating &&
-    (!Number.isSafeInteger(input.quantity) || (input.quantity ?? -1) < 0)
-  )
+  for (const price of [input.costPrice ?? 0, input.sellPrice ?? 0])
+    if (!Number.isSafeInteger(price) || price < 0)
+      return "Prices must be nonnegative amounts.";
+  if (creating && !validQuantity(input.quantity ?? -1, input))
     return "Quantity must be a nonnegative whole number.";
   return null;
 }
@@ -467,6 +619,11 @@ function addProduct(
     lowStockThreshold: input.lowStockThreshold,
     targetStock: input.targetStock,
     supplier: input.supplier.trim(),
+    costPrice: input.costPrice ?? 0,
+    sellPrice: input.sellPrice ?? 0,
+    unit: input.unit ?? "pcs",
+    packSize: input.packSize ?? 1,
+    expiryDate: input.expiryDate ?? "",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -478,6 +635,7 @@ function addProduct(
     quantityBefore: 0,
     quantityAfter: input.quantity,
     note: "Initial stock",
+    ...madeBy(),
     createdAt: serverTimestamp(),
   });
 }
@@ -522,6 +680,11 @@ export async function editProduct(
       lowStockThreshold: input.lowStockThreshold,
       targetStock: input.targetStock,
       supplier: input.supplier.trim(),
+      costPrice: input.costPrice ?? 0,
+      sellPrice: input.sellPrice ?? 0,
+      unit: input.unit ?? "pcs",
+      packSize: input.packSize ?? 1,
+      expiryDate: input.expiryDate ?? "",
       updatedAt: serverTimestamp(),
     }),
   );
@@ -540,34 +703,42 @@ export async function removeProduct(db: Firestore, uid: string, id: string) {
     quantityBefore: product.quantity,
     quantityAfter: 0,
     note: "Product removed",
+    ...madeBy(),
     createdAt: serverTimestamp(),
   });
   return settle(batch.commit());
 }
 
 export type StockChange = {
-  product: Pick<Product, "id" | "name" | "quantity">;
+  product: Pick<
+    Product,
+    "id" | "name" | "quantity" | "costPrice" | "sellPrice" | "onOrder" | "unit"
+  >;
   action: StockAction;
 };
 
 function nextQuantity({ product, action }: StockChange) {
   const { kind, amount } = action;
   if (
-    !Number.isSafeInteger(amount) ||
-    amount < 0 ||
+    !validQuantity(amount, product) ||
     (kind !== "correction" && amount === 0)
   )
-    throw new Error("Enter a valid whole-number quantity.");
+    throw new Error(
+      isLoose(product)
+        ? "Enter an amount with up to 3 decimals."
+        : "Enter a valid whole-number quantity.",
+    );
   if (action.note.trim().length > 200)
     throw new Error("Note must be at most 200 characters.");
-  const next =
+  const next = roundQuantity(
     kind === "correction"
       ? amount
       : kind === "restock" || kind === "return"
         ? product.quantity + amount
-        : product.quantity - amount;
+        : product.quantity - amount,
+  );
   if (next < 0 && action.clampAtZero) return 0;
-  if (!Number.isSafeInteger(next) || next < 0)
+  if (next < 0)
     throw new Error(
       `Insufficient stock for ${product.name}: ${product.quantity} on hand.`,
     );
@@ -597,12 +768,18 @@ export async function recordStockChanges(
   }));
   return settleAll(
     inBatches(db, planned, (batch, { product, action, next, note }) => {
-      const change = next - product.quantity;
+      const change = roundQuantity(next - product.quantity);
       batch.update(doc(db, "users", uid, "products", product.id), {
+        // Decimals would drift under increment, so loose goods store the total.
         quantity:
-          action.kind === "correction" || action.clampAtZero
+          action.kind === "correction" || action.clampAtZero || isLoose(product)
             ? next
             : increment(change),
+        ...(action.expiryDate ? { expiryDate: action.expiryDate } : {}),
+        // A delivery comes off whatever was on order.
+        ...(action.kind === "restock" && product.onOrder
+          ? { onOrder: Math.max(product.onOrder - action.amount, 0) }
+          : {}),
         updatedAt: serverTimestamp(),
       });
       batch.set(doc(movementsPath(db, uid)), {
@@ -613,6 +790,8 @@ export async function recordStockChanges(
         quantityBefore: product.quantity,
         quantityAfter: next,
         note,
+        ...moneyForChange(product, action.kind, action.amount),
+        ...madeBy(),
         createdAt: serverTimestamp(),
       });
     }),
@@ -635,14 +814,14 @@ export async function undoMovement(
   movement: Movement,
 ) {
   const product = await readProduct(db, uid, movement.productId);
-  const next = product.quantity - movement.change;
+  const next = roundQuantity(product.quantity - movement.change);
   if (next < 0)
     throw new Error(
       `This would take ${product.name} below zero. Record a stock count instead.`,
     );
   const batch = writeBatch(db);
   batch.update(doc(db, "users", uid, "products", product.id), {
-    quantity: increment(0 - movement.change),
+    quantity: isLoose(product) ? next : increment(0 - movement.change),
     updatedAt: serverTimestamp(),
   });
   batch.set(doc(movementsPath(db, uid), `undo-${movement.id}`), {
@@ -654,7 +833,225 @@ export async function undoMovement(
     quantityAfter: next,
     note: movementLabels[movement.kind],
     undoes: movement.id,
+    ...madeBy(),
+    ...(movement.revenue ? { revenue: 0 - movement.revenue } : {}),
+    ...(movement.profit ? { profit: 0 - movement.profit } : {}),
     createdAt: serverTimestamp(),
   });
   return settle(batch.commit());
+}
+
+export function markOrdered(
+  db: Firestore,
+  uid: string,
+  lines: { id: string; units: number }[],
+) {
+  return settleAll(
+    inBatches(db, lines, (batch, { id, units }) =>
+      batch.update(doc(db, "users", uid, "products", id), {
+        onOrder: units,
+        updatedAt: serverTimestamp(),
+      }),
+    ),
+  );
+}
+
+export function cancelOrder(db: Firestore, uid: string, ids: string[]) {
+  return markOrdered(
+    db,
+    uid,
+    ids.map((id) => ({ id, units: 0 })),
+  );
+}
+
+export function receiveOrder(db: Firestore, uid: string, products: Product[]) {
+  return recordStockChanges(
+    db,
+    uid,
+    products.map((product) => ({
+      product,
+      action: {
+        kind: "restock" as const,
+        amount: product.onOrder ?? 0,
+        note: "Order received",
+      },
+    })),
+  );
+}
+
+const inviteAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+export async function createInvite(db: Firestore, uid: string) {
+  const old = await getDocs(
+    query(collection(db, "shopInvites"), where("owner", "==", uid)),
+  );
+  await Promise.all(old.docs.map((item) => deleteDoc(item.ref)));
+  const code = [...crypto.getRandomValues(new Uint8Array(8))]
+    .map((value) => inviteAlphabet[value % inviteAlphabet.length])
+    .join("");
+  await setDoc(doc(db, "shopInvites", code), { owner: uid });
+  return code;
+}
+
+export async function joinShop(
+  db: Firestore,
+  uid: string,
+  email: string,
+  rawCode: string,
+) {
+  const code = rawCode.trim().toUpperCase();
+  const invite = code ? await getDoc(doc(db, "shopInvites", code)) : null;
+  if (!invite?.exists()) throw new Error("That invite code isn't valid.");
+  const owner = invite.data().owner as string;
+  if (owner === uid) throw new Error("That code is for your own shop.");
+  const batch = writeBatch(db);
+  batch.set(doc(db, "users", owner, "members", uid), { email, code });
+  batch.set(doc(db, "memberships", uid), { owner });
+  await batch.commit();
+  return owner;
+}
+
+export function subscribeToMembership(
+  db: Firestore,
+  uid: string,
+  onData: (owner: string | null) => void,
+) {
+  // Waits for the server: until then the owner's rules would refuse this user.
+  return onSnapshot(
+    doc(db, "memberships", uid),
+    { includeMetadataChanges: true },
+    (snapshot) => {
+      if (snapshot.metadata.hasPendingWrites) return;
+      onData(snapshot.exists() ? (snapshot.data().owner as string) : null);
+    },
+    () => onData(null),
+  );
+}
+
+export const forgetShop = (db: Firestore, uid: string) =>
+  deleteDoc(doc(db, "memberships", uid));
+
+export async function leaveShop(db: Firestore, uid: string, owner: string) {
+  const batch = writeBatch(db);
+  batch.delete(doc(db, "users", owner, "members", uid));
+  batch.delete(doc(db, "memberships", uid));
+  await batch.commit();
+}
+
+export type Member = { id: string; email: string };
+
+export function subscribeToMembers(
+  db: Firestore,
+  owner: string,
+  onData: (members: Member[]) => void,
+) {
+  return onSnapshot(collection(db, "users", owner, "members"), (snapshot) =>
+    onData(
+      snapshot.docs.map((item) => ({ id: item.id, email: item.data().email })),
+    ),
+  );
+}
+
+export const removeMember = (db: Firestore, owner: string, member: string) =>
+  deleteDoc(doc(db, "users", owner, "members", member));
+
+export type Customer = {
+  id: string;
+  name: string;
+  phone?: string;
+  // Paise owed to the shop.
+  balance: number;
+};
+
+export type CreditEntry = {
+  id: string;
+  customerId: string;
+  customerName: string;
+  amount: number;
+  note: string;
+  by?: string;
+  createdAt?: Timestamp;
+};
+
+export async function addCustomer(
+  db: Firestore,
+  uid: string,
+  input: { name: string; phone: string },
+  existing: Pick<Customer, "name">[],
+) {
+  const name = input.name.trim();
+  if (!name || name.length > 100)
+    throw new Error("Name must be 1–100 characters.");
+  if (existing.some((item) => normalized(item.name) === normalized(name)))
+    throw new Error(`You already have a customer called ${name}.`);
+  return settle(
+    setDoc(doc(collection(db, "users", uid, "customers")), {
+      name,
+      phone: input.phone.trim(),
+      balance: 0,
+      updatedAt: serverTimestamp(),
+    }),
+  );
+}
+
+// A positive amount is goods on credit; a negative amount is a payment.
+export function recordCredit(
+  db: Firestore,
+  uid: string,
+  customer: Pick<Customer, "id" | "name">,
+  amount: number,
+  note: string,
+) {
+  const batch = writeBatch(db);
+  batch.update(doc(db, "users", uid, "customers", customer.id), {
+    balance: increment(amount),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(collection(db, "users", uid, "creditEntries")), {
+    customerId: customer.id,
+    customerName: customer.name,
+    amount,
+    note: note.trim(),
+    ...madeBy(),
+    createdAt: serverTimestamp(),
+  });
+  return settle(batch.commit());
+}
+
+export function subscribeToCustomers(
+  db: Firestore,
+  uid: string,
+  onData: (customers: Customer[]) => void,
+  onError: (message: string) => void,
+) {
+  return onSnapshot(
+    collection(db, "users", uid, "customers"),
+    (snapshot) =>
+      onData(
+        snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }) as Customer)
+          .sort((a, b) => b.balance - a.balance),
+      ),
+    (error) => onError(error.message),
+  );
+}
+
+export function subscribeToCreditEntries(
+  db: Firestore,
+  uid: string,
+  onData: (entries: CreditEntry[]) => void,
+) {
+  return onSnapshot(
+    query(
+      collection(db, "users", uid, "creditEntries"),
+      orderBy("createdAt", "desc"),
+      limit(200),
+    ),
+    (snapshot) =>
+      onData(
+        snapshot.docs.map(
+          (item) => ({ id: item.id, ...item.data() }) as CreditEntry,
+        ),
+      ),
+  );
 }

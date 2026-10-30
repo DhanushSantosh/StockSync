@@ -19,6 +19,11 @@ describe("parseProductsCsv", () => {
         lowStockThreshold: 12,
         targetStock: 48,
         supplier: "Sri Balaji",
+        costPrice: 0,
+        sellPrice: 0,
+        unit: "pcs",
+        packSize: 1,
+        expiryDate: "",
       },
     ]);
   });
@@ -78,5 +83,22 @@ describe("parseProductsCsv", () => {
       [{ name: "Pen", sku: "", category: "Snacks" }],
     );
     expect(rows.map((row) => row.category)).toEqual(["Snacks", "Snacks"]);
+  });
+
+  it("reads cost and selling prices", () => {
+    const { rows } = parseProductsCsv(
+      "Name,Category,Cost,Price\nPen,Office,8.50,12",
+      [],
+    );
+    expect(rows[0]).toMatchObject({ costPrice: 850, sellPrice: 1200 });
+  });
+
+  it("reports a price it cannot read", () => {
+    const { rows, problems } = parseProductsCsv(
+      "Name,Category,Price\nPen,Office,free",
+      [],
+    );
+    expect(rows).toEqual([]);
+    expect(problems[0].message).toMatch(/price/i);
   });
 });

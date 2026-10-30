@@ -3,15 +3,25 @@ import {
   categoryTotals,
   canUndo,
   chartAxis,
+  formatMoney,
   duplicateProblem,
+  expiringSoon,
+  findByCode,
+  formatQuantity,
   groupByDay,
   inventorySummary,
   matchCategory,
+  moneyForChange,
+  packsNeeded,
+  parseMoney,
+  salesSummary,
   similarCategory,
   shelfCapacity,
+  stockValue,
   statusOf,
   suggestedReorder,
   unitsByDay,
+  validQuantity,
   validateProduct,
   type Movement,
   type Product,
@@ -234,5 +244,163 @@ describe("canUndo", () => {
 
   it("has nothing to undo when stock did not change", () => {
     expect(canUndo(entry("sale", 0), new Set())).toBe(false);
+  });
+});
+
+describe("money", () => {
+  it("reads rupee amounts into whole paise", () => {
+    expect(parseMoney("12.50")).toBe(1250);
+    expect(parseMoney(" 1,200 ")).toBe(120000);
+    expect(parseMoney("₹5")).toBe(500);
+    expect(parseMoney("0.1")).toBe(10);
+    expect(parseMoney("")).toBe(0);
+  });
+
+  it("refuses text, negatives and fractions of a paisa", () => {
+    expect(parseMoney("abc")).toBeNull();
+    expect(parseMoney("-5")).toBeNull();
+    expect(parseMoney("1.234")).toBeNull();
+  });
+
+  it("formats with Indian grouping and hides empty paise", () => {
+    expect(formatMoney(12345600)).toBe("₹1,23,456");
+    expect(formatMoney(1250)).toBe("₹12.50");
+    expect(formatMoney(0)).toBe("₹0");
+    expect(formatMoney(-500)).toBe("−₹5");
+  });
+});
+
+describe("stockValue", () => {
+  it("adds up cost and counts products with no cost", () => {
+    const priced = { ...product(10), costPrice: 250 };
+    const unpriced = { ...product(3), costPrice: 0 };
+    const empty = { ...product(0), costPrice: 0 };
+    expect(stockValue([priced, unpriced, empty])).toEqual({
+      value: 2500,
+      unpriced: 1,
+    });
+  });
+});
+
+describe("moneyForChange", () => {
+  const priced = { costPrice: 800, sellPrice: 1000 };
+
+  it("records revenue and profit for a sale", () => {
+    expect(moneyForChange(priced, "sale", 3)).toEqual({
+      revenue: 3000,
+      profit: 600,
+    });
+  });
+
+  it("takes both back for a return", () => {
+    expect(moneyForChange(priced, "return", 1)).toEqual({
+      revenue: -1000,
+      profit: -200,
+    });
+  });
+
+  it("leaves out what it cannot work out", () => {
+    expect(moneyForChange({ sellPrice: 1000 }, "sale", 2)).toEqual({
+      revenue: 2000,
+    });
+    expect(moneyForChange({ costPrice: 800 }, "sale", 2)).toEqual({});
+    expect(moneyForChange(priced, "restock", 2)).toEqual({});
+  });
+});
+
+describe("salesSummary", () => {
+  const today = new Date("2026-10-31T18:00:00");
+
+  it("adds up sales since a date, including undos", () => {
+    const entries = [
+      { ...moved(0, "2026-10-31T09:00:00"), revenue: 3000, profit: 600 },
+      { ...moved(0, "2026-10-31T10:00:00"), revenue: -1000, profit: -200 },
+      { ...moved(0, "2026-10-30T09:00:00"), revenue: 9000, profit: 900 },
+    ];
+    expect(
+      salesSummary(entries as never, new Date("2026-10-31T00:00:00"), today),
+    ).toEqual({ revenue: 2000, profit: 400 });
+  });
+});
+
+describe("on-order stock", () => {
+  it("reduces the suggested order by what is already coming", () => {
+    expect(suggestedReorder({ ...product(2), onOrder: 8 })).toBe(10);
+  });
+
+  it("suggests nothing once the full amount is on the way", () => {
+    expect(suggestedReorder({ ...product(2), onOrder: 18 })).toBeNull();
+  });
+});
+
+describe("loose goods", () => {
+  it("allows up to three decimals for kg and litres only", () => {
+    expect(validQuantity(1.25, { unit: "kg" })).toBe(true);
+    expect(validQuantity(1.2345, { unit: "kg" })).toBe(false);
+    expect(validQuantity(0.5, { unit: "L" })).toBe(true);
+    expect(validQuantity(1.5, { unit: "pcs" })).toBe(false);
+    expect(validQuantity(1.5, {})).toBe(false);
+    expect(validQuantity(-1, { unit: "kg" })).toBe(false);
+  });
+
+  it("shows amounts without floating-point noise", () => {
+    expect(formatQuantity(0.1 + 0.2)).toBe("0.3");
+    expect(formatQuantity(1500)).toBe("1,500");
+  });
+
+  it("validates a loose product's opening stock", () => {
+    expect(
+      validateProduct({ ...input, unit: "kg", quantity: 2.5 }, true),
+    ).toBeNull();
+    expect(validateProduct({ ...input, quantity: 2.5 }, true)).toMatch(
+      /whole number/,
+    );
+  });
+
+  it("rounds sale money to whole paise", () => {
+    expect(
+      moneyForChange({ costPrice: 3333, sellPrice: 4567 }, "sale", 1.5),
+    ).toEqual({ revenue: 6851, profit: 1851 });
+  });
+});
+
+describe("packsNeeded", () => {
+  it("rounds an order up to full packs", () => {
+    expect(packsNeeded(25, 12)).toBe(3);
+    expect(packsNeeded(24, 12)).toBe(2);
+  });
+});
+
+describe("expiringSoon", () => {
+  const today = new Date("2026-10-31T10:00:00");
+  const dated = (name: string, expiryDate: string, quantity = 5) => ({
+    ...product(quantity),
+    name,
+    expiryDate,
+  });
+
+  it("lists stock near or past expiry, soonest first", () => {
+    const found = expiringSoon(
+      [
+        dated("Later", "2026-11-20"),
+        dated("Past", "2026-10-29"),
+        dated("Far", "2027-03-01"),
+        dated("Gone", "2026-11-01", 0),
+      ],
+      today,
+    );
+    expect(found.map((item) => [item.product.name, item.days])).toEqual([
+      ["Past", -2],
+      ["Later", 20],
+    ]);
+  });
+});
+
+describe("findByCode", () => {
+  it("matches a scanned code to a SKU exactly", () => {
+    const stock = [{ ...product(1), sku: "8901234567890" }];
+    expect(findByCode(stock, " 8901234567890 ")?.sku).toBe("8901234567890");
+    expect(findByCode(stock, "890123")).toBeUndefined();
+    expect(findByCode([{ ...product(1), sku: "" }], "")).toBeUndefined();
   });
 });

@@ -3,7 +3,7 @@ import { Upload } from "lucide-react";
 import { errorText, savedMessage } from "./display";
 import { auth, db } from "./firebase";
 import { parseProductsCsv, templateCsv } from "./importCsv";
-import { createProducts, type Product } from "./inventory";
+import { createProducts, shopId, type Product } from "./inventory";
 import { Alert } from "./ui";
 
 function downloadTemplate() {
@@ -46,11 +46,7 @@ export function ImportProducts({
     setError("");
     try {
       const count = parsed.rows.length;
-      const result = await createProducts(
-        db,
-        auth.currentUser.uid,
-        parsed.rows,
-      );
+      const result = await createProducts(db, shopId(), parsed.rows);
       onNotice(
         savedMessage(
           result,
@@ -70,7 +66,7 @@ export function ImportProducts({
         <h2 className="pr-10 text-heading font-semibold">Import products</h2>
         <p className="hint mt-0.5">
           Upload a CSV with Name and Category columns. Quantity, SKU, Alert at,
-          Target and Supplier are optional.
+          Target, Supplier, Cost and Price are optional.
         </p>
       </div>
       <label className="btn-soft w-full cursor-pointer">

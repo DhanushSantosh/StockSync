@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { Search, Upload } from "lucide-react";
-import { shelfCapacity, statusOf, type Product } from "./inventory";
+import { BarcodeButton } from "./BarcodeButton";
+import { shelfCapacity, statusOf, unitSuffix, type Product } from "./inventory";
 import { Status, Ticker } from "./ui";
+import { t } from "./i18n";
 
 const levelTone = {
   healthy: "!bg-accent",
@@ -14,11 +16,13 @@ export function ProductsPage({
   onSelect,
   onAdd,
   onImport,
+  canManage,
 }: {
   products: Product[];
   onSelect: (product: Product) => void;
   onAdd: () => void;
   onImport: () => void;
+  canManage: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All categories");
@@ -51,8 +55,8 @@ export function ProductsPage({
           />
           <input
             className="field !mt-0 !pl-10"
-            aria-label="Search products"
-            placeholder="Search products"
+            aria-label={t("Search products")}
+            placeholder={t("Search products")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -67,17 +71,22 @@ export function ProductsPage({
             <option key={item}>{item}</option>
           ))}
         </select>
-        <button className="btn-soft max-sm:flex-1" onClick={onImport}>
-          <Upload size={16} />
-          Import CSV
-        </button>
+        {canManage && (
+          <button className="btn-soft max-sm:flex-1" onClick={onImport}>
+            <Upload size={16} />
+            {t("Import CSV")}
+          </button>
+        )}
+        <BarcodeButton label={t("Scan")} onCode={setSearch} />
       </div>
       {products.length === 0 ? (
         <div className="px-pad pt-8 pb-14 text-center">
           <p className="hint">No products yet.</p>
-          <button className="btn-accent mt-4" onClick={onAdd}>
-            Add product
-          </button>
+          {canManage && (
+            <button className="btn-accent mt-4" onClick={onAdd}>
+              {t("Add product")}
+            </button>
+          )}
         </div>
       ) : visible.length === 0 ? (
         <p className="hint px-pad pt-8 pb-14 text-center">
@@ -87,9 +96,9 @@ export function ProductsPage({
         <div className="pb-2">
           <div className="hint hidden grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_5rem_6.5rem] gap-5 border-b border-line px-pad pb-2 md:grid">
             <span>Product</span>
-            <span>Category</span>
+            <span>{t("Category")}</span>
             <span>Stock against target</span>
-            <span className="text-right">On hand</span>
+            <span className="text-right">{t("On hand")}</span>
             <span className="text-right">Status</span>
           </div>
           {visible.map((product) => (
@@ -123,6 +132,9 @@ export function ProductsPage({
               </span>
               <span className="text-right text-title font-semibold">
                 <Ticker value={product.quantity} />
+                {unitSuffix(product) && (
+                  <span className="hint">{unitSuffix(product)}</span>
+                )}
               </span>
               <span className="hidden text-right md:block">
                 <Status product={product} />

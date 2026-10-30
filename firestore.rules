@@ -7,28 +7,37 @@ service cloud.firestore {
 
     function validProduct(data) {
       return data.keys().hasAll(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'targetStock', 'supplier', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'targetStock', 'supplier', 'costPrice', 'sellPrice', 'onOrder', 'unit', 'packSize', 'expiryDate', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.sku is string && data.sku.size() <= 60
         && data.category is string && data.category.size() > 0 && data.category.size() <= 60
-        && data.quantity is int && data.quantity >= 0
-        && data.lowStockThreshold is int && data.lowStockThreshold >= 0
-        && (!('targetStock' in data) || (data.targetStock is int && data.targetStock >= 0 && (data.targetStock == 0 || data.targetStock > data.lowStockThreshold)))
+        && data.quantity is number && data.quantity >= 0
+        && data.lowStockThreshold is number && data.lowStockThreshold >= 0
+        && (!('targetStock' in data) || (data.targetStock is number && data.targetStock >= 0 && (data.targetStock == 0 || data.targetStock > data.lowStockThreshold)))
         && (!('supplier' in data) || (data.supplier is string && data.supplier.size() <= 100))
+        && (!('costPrice' in data) || (data.costPrice is int && data.costPrice >= 0))
+        && (!('sellPrice' in data) || (data.sellPrice is int && data.sellPrice >= 0))
+        && (!('onOrder' in data) || (data.onOrder is number && data.onOrder >= 0))
+        && (!('unit' in data) || data.unit in ['pcs', 'kg', 'L'])
+        && (!('packSize' in data) || (data.packSize is int && data.packSize >= 1))
+        && (!('expiryDate' in data) || (data.expiryDate is string && data.expiryDate.size() <= 10))
         && data.createdAt is timestamp && data.updatedAt is timestamp;
     }
 
     function validMovement(data) {
       return data.keys().hasAll(['productId', 'productName', 'kind', 'change', 'quantityBefore', 'quantityAfter', 'note', 'createdAt'])
-        && data.keys().hasOnly(['productId', 'productName', 'kind', 'change', 'quantityBefore', 'quantityAfter', 'note', 'createdAt', 'undoes'])
+        && data.keys().hasOnly(['productId', 'productName', 'kind', 'change', 'quantityBefore', 'quantityAfter', 'note', 'createdAt', 'undoes', 'revenue', 'profit', 'by'])
         && data.productId is string && data.productId.size() > 0 && data.productId.size() <= 128
         && data.productName is string && data.productName.size() > 0 && data.productName.size() <= 100
         && data.kind in ['opening', 'restock', 'sale', 'return', 'damage', 'correction', 'deleted', 'undo']
-        && data.change is int
-        && data.quantityBefore is int && data.quantityBefore >= 0
-        && data.quantityAfter is int && data.quantityAfter >= 0
-        && data.quantityAfter == data.quantityBefore + data.change
+        && data.change is number
+        && data.quantityBefore is number && data.quantityBefore >= 0
+        && data.quantityAfter is number && data.quantityAfter >= 0
+        && math.abs(data.quantityAfter - (data.quantityBefore + data.change)) < 0.001
         && data.note is string && data.note.size() <= 200
+        && (!('revenue' in data) || data.revenue is int)
+        && (!('profit' in data) || data.profit is int)
+        && (!('by' in data) || data.by == request.auth.token.email)
         && data.createdAt is timestamp;
     }
 
@@ -40,19 +49,90 @@ service cloud.firestore {
         : !data.keys().hasAny(['undoes']);
     }
 
+    function isMember(uid) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(uid)/members/$(request.auth.uid));
+    }
+
+    function inShop(uid) {
+      return signedInAs(uid) || isMember(uid);
+    }
+
+    function validCustomer(data) {
+      return data.keys().hasAll(['name', 'phone', 'balance', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'phone', 'balance', 'updatedAt'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.phone is string && data.phone.size() <= 20
+        && data.balance is int
+        && data.updatedAt == request.time;
+    }
+
+    function validCreditEntry(data) {
+      return data.keys().hasAll(['customerId', 'customerName', 'amount', 'note', 'createdAt'])
+        && data.keys().hasOnly(['customerId', 'customerName', 'amount', 'note', 'createdAt', 'by'])
+        && data.customerId is string
+        && data.customerName is string && data.customerName.size() <= 100
+        && data.amount is int
+        && data.note is string && data.note.size() <= 200
+        && (!('by' in data) || data.by == request.auth.token.email)
+        && data.createdAt == request.time;
+    }
+
+    // Codes are long enough to be unguessable, so anyone signed in may look one
+    // up, but only its owner can list or remove them.
+    match /shopInvites/{code} {
+      allow get: if request.auth != null;
+      allow list: if request.auth != null && resource.data.owner == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['owner'])
+        && request.resource.data.owner == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.owner == request.auth.uid;
+    }
+
+    match /memberships/{memberId} {
+      allow read, delete: if signedInAs(memberId);
+      allow create: if signedInAs(memberId)
+        && request.resource.data.keys().hasOnly(['owner'])
+        && request.resource.data.owner is string;
+    }
+
+    match /users/{uid}/members/{memberId} {
+      allow read: if signedInAs(uid) || signedInAs(memberId);
+      allow delete: if signedInAs(uid) || signedInAs(memberId);
+      allow create: if signedInAs(memberId)
+        && request.resource.data.keys().hasOnly(['email', 'code'])
+        && request.resource.data.email is string
+        && get(/databases/$(database)/documents/shopInvites/$(request.resource.data.code)).data.owner == uid;
+    }
+
+    match /users/{uid}/customers/{customerId} {
+      allow read: if inShop(uid);
+      allow create, update: if inShop(uid) && validCustomer(request.resource.data);
+      allow delete: if signedInAs(uid);
+    }
+
+    match /users/{uid}/creditEntries/{entryId} {
+      allow read: if inShop(uid);
+      allow create: if inShop(uid) && validCreditEntry(request.resource.data);
+    }
+
     match /users/{uid}/products/{productId} {
-      allow read, delete: if signedInAs(uid);
+      allow read: if inShop(uid);
+      allow delete: if signedInAs(uid);
       allow create: if signedInAs(uid) && validProduct(request.resource.data)
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
-      allow update: if signedInAs(uid) && validProduct(request.resource.data)
+      allow update: if validProduct(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time;
+        && request.resource.data.updatedAt == request.time
+        && (signedInAs(uid) || (isMember(uid)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['quantity', 'onOrder', 'expiryDate', 'updatedAt'])));
     }
 
     match /users/{uid}/movements/{movementId} {
-      allow read: if signedInAs(uid);
-      allow create: if signedInAs(uid) && validMovement(request.resource.data)
+      allow read: if inShop(uid);
+      allow create: if inShop(uid) && validMovement(request.resource.data)
         && validUndo(request.resource.data, movementId)
         && request.resource.data.createdAt == request.time;
     }

@@ -5,10 +5,12 @@ import { auth, db } from "./firebase";
 import {
   fetchAllMovements,
   movementLabels,
+  shopId,
   undoMovement,
   type Movement,
 } from "./inventory";
 import { Alert, Changes } from "./ui";
+import { t } from "./i18n";
 
 const csvCell = (value: string | number) =>
   `"${String(value).replaceAll('"', '""')}"`;
@@ -47,8 +49,8 @@ export function HistoryPage({
     if (!db || !auth?.currentUser) return;
     setProblem("");
     try {
-      const result = await undoMovement(db, auth.currentUser.uid, movement);
-      onNotice(savedMessage(result, "Change undone."));
+      const result = await undoMovement(db, shopId(), movement);
+      onNotice(savedMessage(result, t("Change undone.")));
     } catch (cause) {
       setProblem(errorText(cause));
     }
@@ -60,7 +62,7 @@ export function HistoryPage({
     setProblem("");
     let all: Movement[];
     try {
-      all = matching(await fetchAllMovements(db, auth.currentUser.uid));
+      all = matching(await fetchAllMovements(db, shopId()));
     } catch (cause) {
       setProblem(errorText(cause));
       return;
@@ -68,7 +70,17 @@ export function HistoryPage({
       setExporting(false);
     }
     const rows = [
-      ["Date", "Product", "Action", "Change", "Before", "After", "Note"],
+      [
+        "Date",
+        "Product",
+        "Action",
+        "Change",
+        "Before",
+        "After",
+        "Sales (₹)",
+        "Profit (₹)",
+        "Note",
+      ],
       ...all.map((movement) => [
         movement.createdAt?.toDate().toISOString() ?? "",
         movement.productName,
@@ -76,6 +88,8 @@ export function HistoryPage({
         movement.change,
         movement.quantityBefore,
         movement.quantityAfter,
+        movement.revenue === undefined ? "" : movement.revenue / 100,
+        movement.profit === undefined ? "" : movement.profit / 100,
         movement.note,
       ]),
     ];
@@ -102,7 +116,7 @@ export function HistoryPage({
           <input
             className="field !mt-0 !pl-10"
             aria-label="Search history"
-            placeholder="Search product or note"
+            placeholder={t("Search product or note")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -113,10 +127,10 @@ export function HistoryPage({
           value={kind}
           onChange={(event) => setKind(event.target.value)}
         >
-          <option value="all">All changes</option>
+          <option value="all">{t("All changes")}</option>
           {Object.entries(movementLabels).map(([value, label]) => (
             <option value={value} key={value}>
-              {label}
+              {t(label)}
             </option>
           ))}
         </select>
@@ -126,7 +140,7 @@ export function HistoryPage({
           disabled={exporting || !movements.length}
         >
           <Download size={16} />
-          {exporting ? "Exporting…" : "Export CSV"}
+          {exporting ? "Exporting…" : t("Export CSV")}
         </button>
       </div>
       {error && (
@@ -148,7 +162,7 @@ export function HistoryPage({
           </p>
           {hasMore && (
             <button className="btn-soft mt-3 w-full" onClick={onLoadMore}>
-              Load older changes
+              {t("Load older changes")}
             </button>
           )}
         </>

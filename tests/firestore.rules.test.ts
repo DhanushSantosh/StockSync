@@ -140,4 +140,173 @@ describe("Firestore inventory rules", () => {
     await assertSucceeds(setDoc(ref, undo));
     await assertFails(setDoc(ref, undo));
   });
+
+  it("keeps prices and order counts as whole nonnegative numbers", async () => {
+    const alice = env.authenticatedContext("alice").firestore();
+    const ref = doc(alice, "users/alice/products/priced");
+    await assertFails(setDoc(ref, { ...valid(), costPrice: -1 }));
+    await assertFails(setDoc(ref, { ...valid(), sellPrice: 1.5 }));
+    await assertFails(setDoc(ref, { ...valid(), onOrder: -2 }));
+    await assertSucceeds(
+      setDoc(ref, { ...valid(), costPrice: 800, sellPrice: 1000, onOrder: 5 }),
+    );
+    await assertFails(
+      setDoc(doc(alice, "users/alice/movements/bad-money"), {
+        ...movement(),
+        revenue: 1.5,
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(alice, "users/alice/movements/good-money"), {
+        ...movement(),
+        revenue: -500,
+        profit: -100,
+      }),
+    );
+  });
+
+  it("accepts weights, units, pack sizes and expiry dates", async () => {
+    const alice = env.authenticatedContext("alice").firestore();
+    const ref = doc(alice, "users/alice/products/rice");
+    await assertFails(setDoc(ref, { ...valid(), unit: "bags" }));
+    await assertFails(setDoc(ref, { ...valid(), packSize: 0 }));
+    await assertFails(setDoc(ref, { ...valid(), expiryDate: 20270115 }));
+    await assertSucceeds(
+      setDoc(ref, {
+        ...valid(),
+        quantity: 2.5,
+        unit: "kg",
+        packSize: 25,
+        expiryDate: "2027-01-15",
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(alice, "users/alice/movements/kg1"), {
+        ...movement(),
+        change: -0.3,
+        quantityBefore: 1,
+        quantityAfter: 0.7,
+      }),
+    );
+    await assertFails(
+      setDoc(doc(alice, "users/alice/movements/kg2"), {
+        ...movement(),
+        change: -0.3,
+        quantityBefore: 1,
+        quantityAfter: 0.5,
+      }),
+    );
+  });
+
+  describe("shared shops", () => {
+    const bobEmail = "bob@shop.test";
+    const owner = () => env.authenticatedContext("alice").firestore();
+    const staff = () =>
+      env.authenticatedContext("bob", { email: bobEmail }).firestore();
+    const join = async () => {
+      await assertSucceeds(
+        setDoc(doc(owner(), "shopInvites/CODE1234"), { owner: "alice" }),
+      );
+      const bob = staff();
+      await assertSucceeds(getDoc(doc(bob, "shopInvites/CODE1234")));
+      await assertSucceeds(
+        setDoc(doc(bob, "users/alice/members/bob"), {
+          email: bobEmail,
+          code: "CODE1234",
+        }),
+      );
+      await assertSucceeds(
+        setDoc(doc(bob, "memberships/bob"), { owner: "alice" }),
+      );
+      await assertSucceeds(
+        setDoc(doc(owner(), "users/alice/products/one"), valid()),
+      );
+      return bob;
+    };
+
+    it("needs a real invite to join", async () => {
+      await assertFails(
+        setDoc(doc(staff(), "users/alice/members/bob"), {
+          email: bobEmail,
+          code: "NOPE",
+        }),
+      );
+      await assertFails(getDoc(doc(staff(), "users/alice/products/one")));
+    });
+
+    it("lets staff sell but not change the catalog", async () => {
+      const bob = await join();
+      const ref = doc(bob, "users/alice/products/one");
+      await assertSucceeds(getDoc(ref));
+      await assertSucceeds(
+        updateDoc(ref, { quantity: 9, updatedAt: serverTimestamp() }),
+      );
+      await assertFails(
+        updateDoc(ref, { sellPrice: 1, updatedAt: serverTimestamp() }),
+      );
+      await assertFails(deleteDoc(ref));
+      await assertFails(setDoc(doc(bob, "users/alice/products/new"), valid()));
+      await assertSucceeds(
+        setDoc(doc(bob, "users/alice/movements/s1"), {
+          ...movement(),
+          by: bobEmail,
+        }),
+      );
+      await assertFails(
+        setDoc(doc(bob, "users/alice/movements/s2"), {
+          ...movement(),
+          by: "someone@else.test",
+        }),
+      );
+    });
+
+    it("cuts off removed staff", async () => {
+      const bob = await join();
+      await assertSucceeds(deleteDoc(doc(owner(), "users/alice/members/bob")));
+      await assertFails(getDoc(doc(bob, "users/alice/products/one")));
+    });
+
+    it("keeps other people out of the invite list and members", async () => {
+      await join();
+      const carol = env.authenticatedContext("carol").firestore();
+      await assertFails(getDoc(doc(carol, "users/alice/members/bob")));
+      await assertFails(deleteDoc(doc(carol, "shopInvites/CODE1234")));
+      await assertFails(
+        setDoc(doc(carol, "shopInvites/FAKE"), { owner: "alice" }),
+      );
+    });
+  });
+
+  it("keeps customer credit whole and its entries permanent", async () => {
+    const alice = env.authenticatedContext("alice").firestore();
+    const customer = doc(alice, "users/alice/customers/c1");
+    await assertFails(
+      setDoc(customer, {
+        name: "",
+        phone: "",
+        balance: 0,
+        updatedAt: serverTimestamp(),
+      }),
+    );
+    await assertSucceeds(
+      setDoc(customer, {
+        name: "Ravi",
+        phone: "",
+        balance: 500,
+        updatedAt: serverTimestamp(),
+      }),
+    );
+    const entry = doc(alice, "users/alice/creditEntries/e1");
+    const record = {
+      customerId: "c1",
+      customerName: "Ravi",
+      amount: 500,
+      note: "",
+      createdAt: serverTimestamp(),
+    };
+    await assertFails(setDoc(entry, { ...record, amount: 1.5 }));
+    await assertSucceeds(setDoc(entry, record));
+    await assertFails(updateDoc(entry, { amount: 1 }));
+    await assertFails(deleteDoc(entry));
+  });
 });
