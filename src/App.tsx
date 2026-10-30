@@ -1,79 +1,44 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
-import {
-  AlertCircle,
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUpRight,
-  Boxes,
-  Check,
-  ChevronDown,
-  ClipboardList,
-  CircleHelp,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  Package,
-  Pencil,
-  Plus,
-  Search,
-  ShoppingCart,
-  Trash2,
-  X,
-} from "lucide-react";
+import { LogOut, Plus } from "lucide-react";
 import { auth, configured, db } from "./firebase";
 import {
-  inventorySummary,
-  movementLabels,
   statusOf,
   subscribeToMovements,
   subscribeToProducts,
+  subscribeToRecentMovements,
   type Movement,
   type Product,
 } from "./inventory";
-import { ActivityPage } from "./ActivityPage";
 import { AuthScreen } from "./AuthScreen";
-import { ProductDialog, type Dialog } from "./ProductDialog";
+import { HistoryPage } from "./HistoryPage";
+import { OverviewPage } from "./OverviewPage";
+import { ProductsPage } from "./ProductsPage";
 import { ReorderPage } from "./ReorderPage";
-import { Banner, Brand, EmptyState, Metric, StatusBadge } from "./ui";
+import { Sheet, type Panel } from "./Sheet";
+import { Alert } from "./ui";
+
+const pages = ["Overview", "Products", "Reorder", "History"] as const;
+type Page = (typeof pages)[number];
 
 function AppShell({ user }: { user: User }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
+  const [recentMovements, setRecentMovements] = useState<Movement[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [activityError, setActivityError] = useState("");
-  const [activityLoading, setActivityLoading] = useState(true);
   const [notice, setNotice] = useState("");
-  const [page, setPage] = useState<
-    "dashboard" | "inventory" | "reorder" | "activity"
-  >("dashboard");
-  const [dialog, setDialog] = useState<Dialog | null>(null);
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All categories");
-  const [mobileMenu, setMobileMenu] = useState(false);
-  const summary = useMemo(() => inventorySummary(products), [products]);
-  const categories = useMemo(
-    () => [
-      "All categories",
-      ...new Set(products.map((product) => product.category).sort()),
-    ],
-    [products],
-  );
-  const visible = useMemo(
-    () =>
-      products.filter(
-        (product) =>
-          (category === "All categories" || product.category === category) &&
-          `${product.name} ${product.sku}`
-            .toLowerCase()
-            .includes(search.toLowerCase().trim()),
-      ),
-    [products, category, search],
-  );
-  const needsAttention = products.filter(
+  const [page, setPage] = useState<Page>("Overview");
+  const [panel, setPanel] = useState<Panel | null>(null);
+  const menu = useRef<Partial<Record<Page, HTMLButtonElement | null>>>({});
+  const [pill, setPill] = useState({ left: 0, width: 0 });
+  const attention = products.filter(
     (product) => statusOf(product) !== "healthy",
-  );
+  ).length;
+  const select = (product: Product) =>
+    setPanel({ kind: "stock", id: product.id });
+  const add = () => setPanel({ kind: "create" });
 
   useEffect(() => {
     if (!db) return;
@@ -86,7 +51,7 @@ function AppShell({ user }: { user: User }) {
         setLoadError("");
       },
       (message) => {
-        setLoadError(`Unable to load inventory: ${message}`);
+        setLoadError(`Inventory failed to load: ${message}`);
         setLoading(false);
       },
     );
@@ -94,528 +59,133 @@ function AppShell({ user }: { user: User }) {
 
   useEffect(() => {
     if (!db) return;
-    return subscribeToMovements(
+    const onError = (message: string) =>
+      setActivityError(`Stock changes failed to load: ${message}`);
+    const stopList = subscribeToMovements(
       db,
       user.uid,
       (items) => {
         setMovements(items);
         setActivityError("");
-        setActivityLoading(false);
       },
-      (message) => {
-        setActivityError(`Unable to load activity: ${message}`);
-        setActivityLoading(false);
-      },
+      onError,
     );
+    const stopChart = subscribeToRecentMovements(
+      db,
+      user.uid,
+      14,
+      setRecentMovements,
+      onError,
+    );
+    return () => {
+      stopList();
+      stopChart();
+    };
   }, [user.uid]);
 
-  function navigate(next: "dashboard" | "inventory" | "reorder" | "activity") {
-    setPage(next);
-    setMobileMenu(false);
-    setNotice("");
-  }
-  const nav = (
-    <>
-      <button
-        className={`nav-link ${page === "dashboard" ? "nav-active" : ""}`}
-        onClick={() => navigate("dashboard")}
-      >
-        <LayoutDashboard size={18} />
-        Dashboard
-      </button>
-      <button
-        className={`nav-link ${page === "inventory" ? "nav-active" : ""}`}
-        onClick={() => navigate("inventory")}
-      >
-        <Package size={18} />
-        Inventory
-      </button>
-      <button
-        className={`nav-link ${page === "reorder" ? "nav-active" : ""}`}
-        onClick={() => navigate("reorder")}
-      >
-        <ShoppingCart size={18} /> Reorder{" "}
-        {needsAttention.length > 0 && (
-          <span className="ml-auto rounded-full bg-amber-100 px-2 text-xs font-bold text-amber-700">
-            {needsAttention.length}
-          </span>
-        )}
-      </button>
-      <button
-        className={`nav-link ${page === "activity" ? "nav-active" : ""}`}
-        onClick={() => navigate("activity")}
-      >
-        <ClipboardList size={18} /> Activity
-      </button>
-    </>
-  );
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 3000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    const item = menu.current[page];
+    if (item) setPill({ left: item.offsetLeft, width: item.offsetWidth });
+  }, [page, attention]);
 
   return (
-    <div className="min-h-screen bg-[#f7f8fa] text-slate-900 lg:flex">
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white px-4 py-7 lg:flex">
-        <div className="px-3">
-          <Brand small />
-        </div>
-        <div className="mt-12 space-y-1">{nav}</div>
-        <div className="mt-auto rounded-2xl bg-indigo-50 p-4">
-          <CircleHelp size={19} className="text-indigo-600" />
-          <p className="mt-3 text-sm font-semibold">A little more clarity</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">
-            Your stock updates automatically on every signed-in device.
-          </p>
-        </div>
-        <div className="mt-5 flex items-center gap-3 border-t border-slate-100 px-2 pt-5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
-            {(user.email?.[0] ?? "U").toUpperCase()}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">Your workspace</p>
-            <p className="truncate text-xs text-slate-500">{user.email}</p>
-          </div>
-          <button
-            className="icon-button"
-            aria-label="Sign out"
-            title="Sign out"
-            onClick={() => auth && signOut(auth)}
-          >
-            <LogOut size={17} />
-          </button>
-        </div>
-      </aside>
-      <div className="min-w-0 flex-1">
-        <header className="flex h-18 items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8 lg:hidden">
-          <Brand small />
-          <button
-            className="icon-button"
-            aria-label="Open menu"
-            onClick={() => setMobileMenu(!mobileMenu)}
-          >
-            {mobileMenu ? <X size={20} /> : <Menu size={20} />}
-          </button>
-        </header>
-        {mobileMenu && (
-          <div className="border-b border-slate-200 bg-white px-5 py-3 lg:hidden">
-            {nav}
+    <div className="mx-auto max-w-[1240px] px-3 pb-24 sm:px-6 md:pb-10">
+      <header className="flex h-16 items-center gap-3 md:h-[72px]">
+        <span className="text-lg font-semibold tracking-tight">StockSync</span>
+        <nav
+          className="menu max-md:fixed max-md:inset-x-3 max-md:bottom-3 max-md:z-40 max-md:shadow-xl max-md:shadow-black/60 md:mx-auto"
+          aria-label="Main"
+        >
+          <span
+            className="menu-pill"
+            style={{
+              transform: `translateX(${pill.left}px)`,
+              width: pill.width,
+            }}
+          />
+          {pages.map((item) => (
             <button
-              className="nav-link mt-1"
-              onClick={() => auth && signOut(auth)}
+              key={item}
+              ref={(node) => {
+                menu.current[item] = node;
+              }}
+              className="menu-item max-md:flex-1 max-md:px-1"
+              aria-current={page === item ? "page" : undefined}
+              onClick={() => setPage(item)}
             >
-              <LogOut size={18} />
-              Sign out
+              {item}
+              {item === "Reorder" && attention > 0 && (
+                <span className="tabular ml-1.5 text-accent">{attention}</span>
+              )}
             </button>
+          ))}
+        </nav>
+        <button className="btn-accent max-md:ml-auto" onClick={add}>
+          <Plus size={16} />
+          Add product
+        </button>
+        <button
+          className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-panel hover:text-fg"
+          aria-label="Sign out"
+          title={`Sign out ${user.email ?? ""}`}
+          onClick={() => auth && signOut(auth)}
+        >
+          <LogOut size={17} />
+        </button>
+      </header>
+      <main>
+        {loadError && (
+          <div className="mb-4">
+            <Alert>{loadError}</Alert>
           </div>
         )}
-        <main className="mx-auto max-w-7xl px-5 py-7 sm:px-8 lg:px-10 lg:py-9">
-          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <span className="eyebrow">YOUR WORKSPACE</span>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
-                {page === "dashboard"
-                  ? "Dashboard"
-                  : page === "inventory"
-                    ? "Inventory"
-                    : page === "reorder"
-                      ? "Reorder"
-                      : "Activity"}
-              </h1>
-              <p className="mt-2 text-sm text-slate-500">
-                {page === "dashboard"
-                  ? "A clear picture of what is happening in your store."
-                  : page === "inventory"
-                    ? "Manage products and keep quantities up to date."
-                    : page === "reorder"
-                      ? "Know what to buy before the shelf is empty."
-                      : "See what changed, when, and why."}
-              </p>
-            </div>
-            <button
-              className="primary-button"
-              onClick={() => setDialog({ kind: "create" })}
-            >
-              <Plus size={18} />
-              Add product
-            </button>
+        {loading ? (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+            <div className="skeleton h-[26rem]" />
+            <div className="skeleton h-[26rem]" />
           </div>
-          {notice && (
-            <div className="mb-5">
-              <Banner tone="success">{notice}</Banner>
-            </div>
-          )}
-          {loadError && (
-            <div className="mb-5">
-              <Banner>{loadError}</Banner>
-            </div>
-          )}
-          {loading ? (
-            <div className="card py-20 text-center text-slate-500">
-              Loading inventory…
-            </div>
-          ) : page === "dashboard" ? (
-            <>
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <Metric
-                  label="Total products"
-                  value={summary.products}
-                  icon={<Package size={20} />}
-                  color="indigo"
-                />
-                <Metric
-                  label="Stock units"
-                  value={summary.units}
-                  icon={<Boxes size={20} />}
-                  color="blue"
-                />
-                <Metric
-                  label="Low stock"
-                  value={summary.low}
-                  icon={<ArrowDownRight size={20} />}
-                  color="amber"
-                />
-                <Metric
-                  label="Out of stock"
-                  value={summary.out}
-                  icon={<AlertCircle size={20} />}
-                  color="rose"
-                />
-              </div>
-              <div className="mt-7 grid gap-6 xl:grid-cols-[1.55fr_1fr]">
-                <section className="card">
-                  <div className="section-heading">
-                    <div>
-                      <h2 className="section-title">Recently updated</h2>
-                      <p className="section-subtitle">
-                        The latest changes in your inventory
-                      </p>
-                    </div>
-                    <button
-                      className="text-button"
-                      onClick={() => navigate("inventory")}
-                    >
-                      View all <ArrowRight size={15} />
-                    </button>
-                  </div>
-                  {products.length ? (
-                    <div className="divide-y divide-slate-100">
-                      {products.slice(0, 5).map((product) => (
-                        <div
-                          key={product.id}
-                          className="flex items-center gap-3 py-4"
-                        >
-                          <span className="product-icon">
-                            <Package size={18} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold">
-                              {product.name}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {product.category}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-semibold">
-                              {product.quantity} units
-                            </p>
-                            <StatusBadge product={product} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyState onAdd={() => setDialog({ kind: "create" })} />
-                  )}
-                </section>
-                <section className="card">
-                  <div className="section-heading">
-                    <div>
-                      <h2 className="section-title">Needs attention</h2>
-                      <p className="section-subtitle">
-                        Products running low or sold out
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
-                      {needsAttention.length}
-                    </span>
-                  </div>
-                  {needsAttention.length ? (
-                    <div className="space-y-3">
-                      {needsAttention.slice(0, 5).map((product) => (
-                        <div
-                          key={product.id}
-                          className="flex items-center gap-3 rounded-xl border border-slate-100 p-3"
-                        >
-                          <span className="flex size-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                            <AlertCircle size={17} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold">
-                              {product.name}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {product.quantity} units left
-                            </p>
-                          </div>
-                          <button
-                            className="text-button"
-                            onClick={() =>
-                              setDialog({ kind: "adjust", product })
-                            }
-                          >
-                            Restock
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-10 text-center">
-                      <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                        <Check size={22} />
-                      </span>
-                      <p className="mt-3 text-sm font-semibold">
-                        All stocked up
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        No products need attention right now.
-                      </p>
-                    </div>
-                  )}
-                </section>
-              </div>
-              <section className="card mt-6">
-                <div className="section-heading">
-                  <div>
-                    <h2 className="section-title">Recent stock changes</h2>
-                    <p className="section-subtitle">
-                      A record of what moved and why
-                    </p>
-                  </div>
-                  <button
-                    className="text-button"
-                    onClick={() => navigate("activity")}
-                  >
-                    View activity <ArrowRight size={15} />
-                  </button>
-                </div>
-                {activityLoading ? (
-                  <p className="py-5 text-sm text-slate-500">
-                    Loading activity…
-                  </p>
-                ) : activityError ? (
-                  <p role="alert" className="py-5 text-sm text-rose-700">
-                    {activityError}
-                  </p>
-                ) : movements.length ? (
-                  <div className="divide-y divide-slate-100">
-                    {movements.slice(0, 4).map((movement) => (
-                      <div
-                        key={movement.id}
-                        className="flex items-center gap-3 py-3 text-sm"
-                      >
-                        <span
-                          className={`font-bold ${movement.change < 0 ? "text-rose-600" : "text-emerald-600"}`}
-                        >
-                          {movement.change > 0 ? "+" : ""}
-                          {movement.change}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate font-medium">
-                          {movement.productName}
-                        </span>
-                        <span className="text-xs text-slate-500">
-                          {movementLabels[movement.kind]}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="py-5 text-sm text-slate-500">
-                    New stock movements will appear here.
-                  </p>
-                )}
-              </section>
-            </>
-          ) : page === "reorder" ? (
-            <ReorderPage
-              products={products}
-              onEdit={(product) => setDialog({ kind: "edit", product })}
-              onRestock={(product) => setDialog({ kind: "adjust", product })}
-            />
-          ) : page === "activity" ? (
-            <ActivityPage
-              movements={movements}
-              error={activityError}
-              loading={activityLoading}
-            />
-          ) : (
-            <section className="card !p-0">
-              <div className="flex flex-wrap gap-3 border-b border-slate-100 p-5 sm:p-6">
-                <div className="relative min-w-52 flex-1">
-                  <Search
-                    size={18}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-                  <input
-                    className="field !pl-10"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search products or SKU"
-                    aria-label="Search products"
-                  />
-                </div>
-                <div className="relative">
-                  <select
-                    className="field appearance-none !pr-10"
-                    value={category}
-                    onChange={(event) => setCategory(event.target.value)}
-                    aria-label="Filter by category"
-                  >
-                    {categories.map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    size={16}
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-                </div>
-              </div>
-              {products.length === 0 ? (
-                <EmptyState onAdd={() => setDialog({ kind: "create" })} />
-              ) : visible.length === 0 ? (
-                <div className="py-20 text-center text-sm text-slate-500">
-                  No products match your search.
-                </div>
-              ) : (
-                <>
-                  <div className="hidden overflow-x-auto md:block">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        <tr>
-                          <th className="px-6 py-4">Product</th>
-                          <th className="px-6 py-4">Category</th>
-                          <th className="px-6 py-4">Quantity</th>
-                          <th className="px-6 py-4">Status</th>
-                          <th className="px-6 py-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {visible.map((product) => (
-                          <tr key={product.id} className="hover:bg-slate-50/70">
-                            <td className="px-6 py-4">
-                              <p className="font-semibold">{product.name}</p>
-                              <p className="mt-0.5 text-xs text-slate-400">
-                                {product.sku || "No SKU"}
-                              </p>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-slate-600">
-                              {product.category}
-                            </td>
-                            <td className="px-6 py-4 font-semibold">
-                              {product.quantity}
-                            </td>
-                            <td className="px-6 py-4">
-                              <StatusBadge product={product} />
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex justify-end gap-1">
-                                <button
-                                  className="table-action"
-                                  title="Adjust stock"
-                                  aria-label={`Adjust stock for ${product.name}`}
-                                  onClick={() =>
-                                    setDialog({ kind: "adjust", product })
-                                  }
-                                >
-                                  <ArrowUpRight size={17} />
-                                </button>
-                                <button
-                                  className="table-action"
-                                  title="Edit product"
-                                  aria-label={`Edit ${product.name}`}
-                                  onClick={() =>
-                                    setDialog({ kind: "edit", product })
-                                  }
-                                >
-                                  <Pencil size={16} />
-                                </button>
-                                <button
-                                  className="table-action hover:!text-rose-600"
-                                  title="Delete product"
-                                  aria-label={`Delete ${product.name}`}
-                                  onClick={() =>
-                                    setDialog({ kind: "delete", product })
-                                  }
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="divide-y divide-slate-100 md:hidden">
-                    {visible.map((product) => (
-                      <div key={product.id} className="p-5">
-                        <div className="flex justify-between gap-3">
-                          <div>
-                            <p className="font-semibold">{product.name}</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {product.category} · {product.sku || "No SKU"}
-                            </p>
-                          </div>
-                          <StatusBadge product={product} />
-                        </div>
-                        <div className="mt-4 flex items-center justify-between">
-                          <span className="text-sm font-semibold">
-                            {product.quantity} units
-                          </span>
-                          <div className="flex gap-1">
-                            <button
-                              className="table-action"
-                              aria-label={`Adjust stock for ${product.name}`}
-                              onClick={() =>
-                                setDialog({ kind: "adjust", product })
-                              }
-                            >
-                              <ArrowUpRight size={17} />
-                            </button>
-                            <button
-                              className="table-action"
-                              aria-label={`Edit ${product.name}`}
-                              onClick={() =>
-                                setDialog({ kind: "edit", product })
-                              }
-                            >
-                              <Pencil size={16} />
-                            </button>
-                            <button
-                              className="table-action"
-                              aria-label={`Delete ${product.name}`}
-                              onClick={() =>
-                                setDialog({ kind: "delete", product })
-                              }
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </section>
-          )}
-        </main>
-      </div>
-      {dialog && (
-        <ProductDialog
-          key={`${dialog.kind}-${"product" in dialog ? dialog.product.id : "new"}`}
-          dialog={dialog}
-          onClose={() => setDialog(null)}
-          onSuccess={setNotice}
+        ) : (
+          <div key={page} className="page">
+            {page === "Overview" ? (
+              <OverviewPage
+                products={products}
+                movements={movements}
+                recentMovements={recentMovements}
+                activityError={activityError}
+                onSelect={select}
+                onAdd={add}
+                onNavigate={setPage}
+              />
+            ) : page === "Products" ? (
+              <ProductsPage products={products} onSelect={select} onAdd={add} />
+            ) : page === "Reorder" ? (
+              <ReorderPage products={products} onSelect={select} />
+            ) : (
+              <HistoryPage movements={movements} error={activityError} />
+            )}
+          </div>
+        )}
+      </main>
+      {panel && (
+        <Sheet
+          key={panel.kind === "create" ? "create" : panel.id}
+          panel={panel}
+          products={products}
+          onPanel={setPanel}
+          onClose={() => setPanel(null)}
+          onNotice={setNotice}
         />
+      )}
+      {notice && (
+        <div key={notice} role="status" className="toast">
+          {notice}
+        </div>
       )}
     </div>
   );
@@ -637,29 +207,18 @@ export default function App() {
   }, []);
   if (!configured)
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
-        <div className="card max-w-lg">
-          <Brand />
-          <h1 className="mt-8 text-2xl font-bold">
-            Connect Firebase to continue
-          </h1>
-          <p className="mt-3 text-sm leading-relaxed text-slate-600">
-            Create a Firebase project, enable Email/Password Authentication and
-            Cloud Firestore, then copy <code>.env.example</code> to{" "}
-            <code>.env</code> and fill in the four web app settings. Restart the
-            development server afterward.
+      <div className="flex min-h-dvh items-center justify-center p-4">
+        <section className="panel max-w-md !p-6">
+          <h1 className="text-xl font-semibold">Connect Firebase</h1>
+          <p className="hint mt-2 leading-relaxed">
+            Enable Email/Password Authentication and Cloud Firestore, copy{" "}
+            <code>.env.example</code> to <code>.env</code>, fill in the four
+            settings, then restart the development server. README.md has the
+            steps.
           </p>
-          <p className="mt-5 text-xs text-slate-400">
-            See README.md for setup steps.
-          </p>
-        </div>
+        </section>
       </div>
     );
-  if (checking)
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
-        Connecting to StockSync…
-      </div>
-    );
+  if (checking) return <div className="min-h-dvh bg-ink" />;
   return user ? <AppShell user={user} /> : <AuthScreen />;
 }

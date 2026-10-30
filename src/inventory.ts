@@ -8,6 +8,7 @@ import {
   runTransaction,
   serverTimestamp,
   updateDoc,
+  where,
   writeBatch,
   type Firestore,
   type Timestamp,
@@ -76,6 +77,16 @@ export function suggestedReorder(product: Product): number | null {
   return product.targetStock - product.quantity;
 }
 
+// What a full shelf holds: sets a product's tile size and fill level.
+export function shelfCapacity(product: Product): number {
+  return Math.max(
+    product.targetStock ?? 0,
+    product.quantity,
+    product.lowStockThreshold * 2,
+    1,
+  );
+}
+
 export function inventorySummary(products: Product[]) {
   return {
     products: products.length,
@@ -83,6 +94,87 @@ export function inventorySummary(products: Product[]) {
     low: products.filter((product) => statusOf(product) === "low").length,
     out: products.filter((product) => statusOf(product) === "out").length,
   };
+}
+
+const startOfDay = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const addDays = (date: Date, days: number) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+const movedAt = (movement: Pick<Movement, "createdAt">, now: Date) =>
+  movement.createdAt?.toDate() ?? now;
+
+// Closing total for each of the last `days` days, oldest first.
+export function unitsByDay(
+  movements: Pick<Movement, "change" | "createdAt">[],
+  currentUnits: number,
+  days: number,
+  now: Date,
+) {
+  const today = startOfDay(now);
+  return Array.from({ length: days }, (_, index) => {
+    const date = addDays(today, index - days + 1);
+    const nextDay = addDays(date, 1);
+    const changedSince = movements
+      .filter((movement) => movedAt(movement, now) >= nextDay)
+      .reduce((sum, movement) => sum + movement.change, 0);
+    return { date, units: currentUnits - changedSince };
+  });
+}
+
+const shortDate = (date: Date) =>
+  date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+export function groupByDay(movements: Movement[], now: Date) {
+  const today = startOfDay(now).getTime();
+  const yesterday = addDays(startOfDay(now), -1).getTime();
+  const groups: { label: string; net: number; movements: Movement[] }[] = [];
+  const byDay = new Map<number, (typeof groups)[number]>();
+  for (const movement of movements) {
+    const date = startOfDay(movedAt(movement, now));
+    const day = date.getTime();
+    let group = byDay.get(day);
+    if (!group) {
+      const prefix =
+        day === today ? "Today, " : day === yesterday ? "Yesterday, " : "";
+      group = { label: prefix + shortDate(date), net: 0, movements: [] };
+      byDay.set(day, group);
+      groups.push(group);
+    }
+    group.net += movement.change;
+    group.movements.push(movement);
+  }
+  return groups;
+}
+
+export function categoryTotals(products: Product[]) {
+  const totals = new Map<string, { units: number; capacity: number }>();
+  for (const product of products) {
+    const total = totals.get(product.category) ?? { units: 0, capacity: 0 };
+    total.units += product.quantity;
+    total.capacity += shelfCapacity(product);
+    totals.set(product.category, total);
+  }
+  return [...totals]
+    .map(([category, total]) => ({ category, ...total }))
+    .sort((a, b) => b.units - a.units || b.capacity - a.capacity);
+}
+
+export function chartAxis(values: number[]) {
+  let low = Math.min(...values);
+  let high = Math.max(...values);
+  if (low === high) {
+    high = low + 4;
+    low = Math.max(low - 4, 0);
+  }
+  const rough = (high - low) / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const step =
+    [1, 2, 5, 10].find((factor) => factor * magnitude >= rough)! * magnitude;
+  const min = Math.floor(low / step) * step;
+  const max = Math.ceil(high / step) * step;
+  const ticks: number[] = [];
+  for (let tick = min; tick <= max; tick += step) ticks.push(tick);
+  return { min, max, ticks };
 }
 
 export function validateProduct(
@@ -148,6 +240,33 @@ export function subscribeToMovements(
 ) {
   return onSnapshot(
     query(movementsPath(db, uid), orderBy("createdAt", "desc"), limit(50)),
+    (snapshot) => {
+      onData(
+        snapshot.docs.map(
+          (item) => ({ id: item.id, ...item.data() }) as Movement,
+        ),
+      );
+    },
+    (error) => onError(error.message),
+  );
+}
+
+// The 14-day chart needs every change in range, not just the latest 50.
+export function subscribeToRecentMovements(
+  db: Firestore,
+  uid: string,
+  days: number,
+  onData: (movements: Movement[]) => void,
+  onError: (message: string) => void,
+) {
+  const since = addDays(startOfDay(new Date()), 1 - days);
+  return onSnapshot(
+    query(
+      movementsPath(db, uid),
+      where("createdAt", ">=", since),
+      orderBy("createdAt", "desc"),
+      limit(2000),
+    ),
     (snapshot) => {
       onData(
         snapshot.docs.map(

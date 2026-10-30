@@ -4,15 +4,8 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
 } from "firebase/auth";
-import {
-  ArrowRight,
-  Package,
-  Boxes,
-  AlertCircle,
-  ShieldCheck,
-} from "lucide-react";
 import { auth } from "./firebase";
-import { Banner, Brand } from "./ui";
+import { Alert } from "./ui";
 
 export function AuthScreen() {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -81,140 +74,70 @@ export function AuthScreen() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 lg:grid lg:grid-cols-2">
-      <div className="flex min-h-screen flex-col px-6 py-8 sm:px-12 lg:px-16">
-        <Brand />
-        <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-14">
-          <div className="mb-9">
-            <span className="eyebrow">WELCOME TO STOCKSYNC</span>
-            <h1 className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
-              {mode === "login" ? "Welcome back" : "Create your account"}
-            </h1>
-            <p className="mt-3 text-slate-500">
-              {mode === "login"
-                ? "Sign in to keep your inventory moving."
-                : "Your inventory, organized and available anywhere."}
-            </p>
-          </div>
-          <form onSubmit={submit} className="space-y-5">
-            {error && <Banner>{error}</Banner>}
-            {message && <Banner tone="success">{message}</Banner>}
-            <label className="field-label">
-              Email address
-              <input
-                className="field mt-2"
-                type="email"
-                autoComplete="email"
-                placeholder="you@yourshop.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </label>
-            <label className="field-label">
-              Password
-              <input
-                className="field mt-2"
-                type="password"
-                autoComplete={
-                  mode === "login" ? "current-password" : "new-password"
-                }
-                minLength={6}
-                placeholder="Enter your password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-            </label>
-            {mode === "login" && (
-              <button
-                type="button"
-                className="-mt-2 block text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-                onClick={resetPassword}
-                disabled={busy}
-              >
-                Forgot password?
-              </button>
-            )}
+    <div className="flex min-h-dvh items-center justify-center p-4">
+      <section key={mode} className="panel page w-full max-w-sm !p-6">
+        <p className="text-lg font-semibold tracking-tight">StockSync</p>
+        <h1 className="mt-6 text-[28px] leading-tight font-semibold">
+          {mode === "login" ? "Sign in" : "Create account"}
+        </h1>
+        <form onSubmit={submit} className="mt-5 space-y-4">
+          {error && <Alert>{error}</Alert>}
+          {message && <p className="text-gain">{message}</p>}
+          <label className="field-label">
+            Email
+            <input
+              className="field"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </label>
+          <label className="field-label">
+            Password
+            <input
+              className="field"
+              type="password"
+              autoComplete={
+                mode === "login" ? "current-password" : "new-password"
+              }
+              minLength={6}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </label>
+          <button className="btn-accent w-full !py-3" disabled={busy}>
+            {busy
+              ? "Please wait…"
+              : mode === "login"
+                ? "Sign in"
+                : "Create account"}
+          </button>
+        </form>
+        <div className="mt-4 flex justify-between">
+          <button
+            className="btn-link"
+            onClick={() => {
+              setMode(mode === "login" ? "register" : "login");
+              setError("");
+            }}
+          >
+            {mode === "login" ? "Create account" : "Sign in instead"}
+          </button>
+          {mode === "login" && (
             <button
-              className="primary-button w-full justify-center py-3.5"
+              type="button"
+              className="btn-link"
+              onClick={resetPassword}
               disabled={busy}
             >
-              {busy
-                ? "Please wait…"
-                : mode === "login"
-                  ? "Sign in"
-                  : "Create account"}
-              <ArrowRight size={17} />
+              Reset password
             </button>
-          </form>
-          <p className="mt-7 text-center text-sm text-slate-500">
-            {mode === "login"
-              ? "New to StockSync?"
-              : "Already have an account?"}{" "}
-            <button
-              className="font-semibold text-indigo-600 hover:text-indigo-700"
-              onClick={() => {
-                setMode(mode === "login" ? "register" : "login");
-                setError("");
-              }}
-            >
-              {mode === "login" ? "Create an account" : "Sign in"}
-            </button>
-          </p>
+          )}
         </div>
-        <p className="text-xs text-slate-400">
-          © 2026 StockSync. Inventory, in sync.
-        </p>
-      </div>
-      <div className="hidden bg-indigo-600 p-12 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="flex justify-end">
-          <span className="rounded-full border border-white/25 px-4 py-2 text-xs font-medium">
-            Built for the way you work
-          </span>
-        </div>
-        <div className="mx-auto max-w-lg">
-          <div className="mb-8 inline-flex size-16 items-center justify-center rounded-2xl bg-white/15">
-            <Package size={34} />
-          </div>
-          <h2 className="text-5xl font-bold leading-tight tracking-tight">
-            A clearer view of every product on your shelf.
-          </h2>
-          <p className="mt-6 text-lg leading-relaxed text-indigo-100">
-            Track stock, catch shortages early, and see every change update
-            instantly across your devices.
-          </p>
-          <div className="mt-12 grid grid-cols-3 gap-3">
-            <div className="promo-tile">
-              <Boxes />
-              <span>
-                All products
-                <br />
-                in one place
-              </span>
-            </div>
-            <div className="promo-tile">
-              <AlertCircle />
-              <span>
-                Low stock
-                <br />
-                at a glance
-              </span>
-            </div>
-            <div className="promo-tile">
-              <ShieldCheck />
-              <span>
-                Private and
-                <br />
-                secure
-              </span>
-            </div>
-          </div>
-        </div>
-        <p className="text-sm text-indigo-200">
-          Simple stock management for small businesses.
-        </p>
-      </div>
+      </section>
     </div>
   );
 }

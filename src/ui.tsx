@@ -1,97 +1,131 @@
-import type { ReactNode } from "react";
-import { AlertCircle, Boxes, Check, PackagePlus, Plus } from "lucide-react";
-import { statusOf, type Product } from "./inventory";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { signed, useNow, useTick } from "./display";
+import {
+  groupByDay,
+  movementLabels,
+  statusOf,
+  type Movement,
+  type Product,
+} from "./inventory";
 
-export function Brand({ small = false }: { small?: boolean }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex size-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
-        <Boxes size={21} strokeWidth={2.2} />
-      </span>
-      <span
-        className={
-          small
-            ? "text-lg font-bold tracking-tight"
-            : "text-xl font-bold tracking-tight"
-        }
-      >
-        Stock<span className="text-indigo-600">Sync</span>
-      </span>
-    </div>
-  );
+const prefersReducedMotion = () =>
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function useCountUp(value: number, startFrom: number) {
+  const [shown, setShown] = useState(startFrom);
+  const current = useRef(startFrom);
+  useEffect(() => {
+    const start = current.current;
+    if (start === value) return;
+    const duration = prefersReducedMotion() ? 0 : 700;
+    const startedAt = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const progress = duration ? Math.min((now - startedAt) / duration, 1) : 1;
+      const eased = 1 - (1 - progress) ** 3;
+      current.current = Math.round(start + (value - start) * eased);
+      setShown(current.current);
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+  return shown;
 }
 
-export function Banner({
-  children,
-  tone = "error",
+export function Ticker({
+  value,
+  countIn = false,
+  className = "",
 }: {
-  children: ReactNode;
-  tone?: "error" | "success";
+  value: number;
+  countIn?: boolean;
+  className?: string;
 }) {
+  const shown = useCountUp(value, countIn ? 0 : value);
+  const tick = useTick(value);
   return (
-    <div
-      role={tone === "error" ? "alert" : "status"}
-      className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm ${tone === "error" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}
-    >
-      <span className="mt-0.5 shrink-0">
-        {tone === "error" ? <AlertCircle size={16} /> : <Check size={16} />}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-export function StatusBadge({ product }: { product: Product }) {
-  const status = statusOf(product);
-  const labels = { healthy: "In stock", low: "Low stock", out: "Out of stock" };
-  return (
-    <span className={`status-badge status-${status}`}>
-      <span className="size-1.5 rounded-full bg-current" />
-      {labels[status]}
+    <span key={tick.id} className={`ticker ${tick.direction} ${className}`}>
+      {shown.toLocaleString()}
     </span>
   );
 }
 
-export function Metric({
-  label,
-  value,
-  icon,
-  color,
-}: {
-  label: string;
-  value: number;
-  icon: ReactNode;
-  color: string;
-}) {
+export function Alert({ children }: { children: ReactNode }) {
   return (
-    <div className="card">
-      <div className="flex items-start justify-between">
-        <span className={`metric-icon metric-${color}`}>{icon}</span>
-        <span className="text-xs font-medium text-slate-400">Live</span>
-      </div>
-      <p className="mt-6 text-3xl font-bold tracking-tight">
-        {value.toLocaleString()}
-      </p>
-      <p className="mt-1 text-sm text-slate-500">{label}</p>
-    </div>
+    <p role="alert" className="rounded-xl bg-loss/10 px-3.5 py-2.5 text-loss">
+      {children}
+    </p>
   );
 }
 
-export function EmptyState({ onAdd }: { onAdd: () => void }) {
+const statusText = {
+  healthy: { label: "Enough", tone: "text-gain" },
+  low: { label: "Running low", tone: "text-warn" },
+  out: { label: "Sold out", tone: "text-loss" },
+};
+
+export function Status({ product }: { product: Product }) {
+  const { label, tone } = statusText[statusOf(product)];
+  return <span className={`text-[13px] ${tone}`}>{label}</span>;
+}
+
+export function Changes({
+  movements,
+  limit,
+}: {
+  movements: Movement[];
+  limit?: number;
+}) {
+  const [seen] = useState(
+    () => new Set(movements.map((movement) => movement.id)),
+  );
+  useEffect(() => {
+    for (const movement of movements) seen.add(movement.id);
+  }, [movements, seen]);
+  const now = useNow();
+  const groups = groupByDay(movements.slice(0, limit), now);
   return (
-    <div className="px-5 py-16 text-center">
-      <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
-        <PackagePlus size={26} />
-      </span>
-      <h3 className="mt-4 font-semibold">Your inventory starts here</h3>
-      <p className="mx-auto mt-2 max-w-xs text-sm text-slate-500">
-        Add your first product to start tracking stock and see your dashboard
-        come to life.
-      </p>
-      <button className="primary-button mx-auto mt-5" onClick={onAdd}>
-        <Plus size={17} />
-        Add first product
-      </button>
-    </div>
+    <>
+      {groups.map((group) => (
+        <div key={group.label}>
+          <div className="hint flex justify-between pt-3.5 pb-1">
+            <span>{group.label}</span>
+            <span className="tabular">
+              {signed(group.net)} {Math.abs(group.net) === 1 ? "unit" : "units"}
+            </span>
+          </div>
+          {group.movements.map((movement) => {
+            const incoming = movement.change > 0;
+            return (
+              <div
+                key={movement.id}
+                className={`grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-3 py-2.5 ${seen.has(movement.id) ? "" : "row-in"}`}
+              >
+                <span
+                  aria-hidden
+                  className={`row-span-2 flex size-9 items-center justify-center rounded-full text-base font-bold ${incoming ? "bg-gain/12 text-gain" : movement.change < 0 ? "bg-loss/12 text-loss" : "bg-raised text-muted"}`}
+                >
+                  {incoming ? "+" : movement.change < 0 ? "−" : "0"}
+                </span>
+                <p className="truncate font-medium">{movement.productName}</p>
+                <span
+                  className={`tabular text-right text-base font-semibold ${incoming ? "text-gain" : ""}`}
+                >
+                  {signed(movement.change)}
+                </span>
+                <span className="hint truncate">
+                  {movementLabels[movement.kind]}
+                  {movement.note ? `, ${movement.note}` : ""}
+                </span>
+                <span className="hint tabular text-right">
+                  {movement.quantityAfter} left
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </>
   );
 }

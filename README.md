@@ -7,14 +7,14 @@ A real-time inventory app for a single shopkeeper. It helps answer three daily q
 - Add and edit products with SKU, category, supplier, low-stock alert level, and restock target.
 - Record receipts, sales, damaged/lost units, and physical stock counts. Firestore transactions keep the quantity and movement record together, and reject negative stock.
 - Show a live reorder list with suggested quantities, supplier details, copyable text, and CSV download.
-- Browse, search, filter, and export recent stock movements, including before/after quantities and optional notes.
-- See live dashboard totals and stock alerts on multiple signed-in devices. Firebase Authentication also provides password-reset email.
+- Browse, search, filter, and export recent stock changes, including before/after quantities and optional notes.
+- See live stock totals, a 14-day chart, and stock alerts on multiple signed-in devices. Firebase Authentication also provides password-reset email.
 
 ## What is stored in Firebase
 
 Firebase Authentication stores account credentials. Cloud Firestore stores product documents at `users/{uid}/products/{productId}` and time-stamped movement documents at `users/{uid}/movements/{movementId}`. Firestore Security Rules restrict both collections to their account. Standard Firebase Hosting can serve the built web app.
 
-Movement records are write-once through the client rules and remain after a product is deleted. They record actions made in this app; they are not a tamper-proof audit log against a user who controls their own Firebase client. Changes made before this feature was added cannot be reconstructed. The Activity screen loads the latest 50 movements and exports the currently displayed set.
+Movement records are write-once through the client rules and remain after a product is deleted. They record actions made in this app; they are not a tamper-proof audit log against a user who controls their own Firebase client. Changes made before this feature was added cannot be reconstructed. The History screen loads the latest 50 movements and exports the currently displayed set. The Overview chart reads the last 14 days of movements, up to 2,000.
 
 ## Stack
 
@@ -68,7 +68,7 @@ Firebase Hosting serves the `dist` folder and rewrites routes to `index.html`. B
 
 ## Demo
 
-Register an account, add a product with a restock target, and open StockSync in a second browser window with the same account. Record a sale in one window; the other window, dashboard, Activity, and Reorder screens update automatically. Try reducing more units than available to see the transaction reject a negative quantity. Sign in with another account to confirm that inventories are separate.
+Register an account, add a product with a restock target, and open StockSync in a second browser window with the same account. Record a sale in one window; the other window, the Overview, Products, Reorder, and History screens update automatically. Try reducing more units than available to see the transaction reject a negative quantity. Sign in with another account to confirm that inventories are separate.
 
 ## Scope
 

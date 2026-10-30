@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StockSync mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400..700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0a0b0d;--panel:#131417;--raised:#1d1f23;--line:#26282d;--text:#eeeff1;--muted:#9a9ea6;--accent:#8ab8ff;--gain:#8fd4b4;--warn:#e5c07b;--loss:#e8919a}
+*{box-sizing:border-box;margin:0}
+body{background:var(--ink);color:var(--text);font:400 14px/1.45 "Google Sans",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.num{font-family:"Google Sans",sans-serif;font-variant-numeric:tabular-nums lining-nums}
+.wrap{max-width:1240px;margin:0 auto;padding:0 24px 40px}
+
+header{display:flex;align-items:center;gap:20px;height:72px}
+.logo{font:600 19px "Google Sans";letter-spacing:-.01em}
+nav{display:flex;gap:2px;background:var(--panel);padding:4px;border-radius:999px;margin:0 auto}
+nav button{padding:7px 16px;border-radius:999px;color:var(--muted);transition:color .2s,background .2s}
+nav button:hover{color:var(--text)}nav .on{background:var(--raised);color:var(--text);font-weight:500}
+.add{background:var(--accent);color:var(--ink);font-weight:600;padding:9px 16px;border-radius:999px;transition:transform .15s}.add:active{transform:scale(.97)}
+
+.grid{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(0,1fr);gap:16px}
+section{border-radius:20px;background:var(--panel);padding:20px}
+h2{font:600 16px "Google Sans"}
+.sub{color:var(--muted);font-size:13px}
+
+/* Hero: the one loud thing on the page */
+.hero{background:var(--panel);padding:24px 24px 16px}
+.hero h1{font:500 15px "Google Sans"}
+.big{font:500 72px/1 "Google Sans";letter-spacing:-.02em;margin-top:6px;display:flex;align-items:baseline;gap:10px}
+.big small{font:500 20px "Google Sans";letter-spacing:0;opacity:.85}
+.delta{display:inline-block;margin-top:10px;color:var(--accent);background:rgba(138,184,255,.14);padding:4px 11px;border-radius:999px;font-weight:500}
+.chartcap{display:flex;justify-content:space-between;align-items:baseline;margin-top:20px;font-size:13px;color:var(--muted)}
+.chart{position:relative;margin-top:6px}
+.chart svg{display:block;width:100%;height:190px;overflow:visible}
+.chart text{fill:var(--muted);font:12px "Google Sans"}
+.tip{position:absolute;top:0;pointer-events:none;background:var(--raised);color:var(--text);padding:6px 10px;border-radius:10px;font-size:12px;white-space:nowrap;transform:translateX(-50%);opacity:0;transition:opacity .12s}
+.tip b{font:600 14px "Google Sans";display:block}
+
+/* Reorder */
+.order{display:flex;flex-direction:column}
+.order .total{display:flex;justify-content:space-between;align-items:baseline;margin-top:2px}
+.item{display:grid;grid-template-columns:1fr auto;gap:0 12px;padding:12px 0;border-top:1px solid var(--line)}
+.order .list{margin-top:14px;flex:1}
+.item .state{font-size:13px}.warn{color:var(--warn)}.loss{color:var(--loss)}
+.item .qty{font:600 16px "Google Sans";text-align:right}
+.item .of{font-size:13px;color:var(--muted);text-align:right}
+.cta{margin-top:12px;width:100%;background:var(--raised);padding:11px;border-radius:12px;font-weight:600;transition:background .15s}.cta:hover{background:var(--line)}
+
+/* Health */
+.health{display:flex;gap:3px;height:12px;margin-top:14px}
+.health i{border-radius:4px;display:block}
+.hkey{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.hkey b{font:600 22px "Google Sans";display:block}
+.hkey span{color:var(--muted);font-size:13px}.hkey span i{display:inline-block;width:8px;height:8px;border-radius:3px;margin-right:6px}
+
+/* Category bars */
+.legend{display:flex;gap:16px;margin:12px 0 6px;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.cat{display:grid;grid-template-columns:96px 1fr 84px;gap:12px;align-items:center;padding:9px 0}
+.bar{height:10px;border-radius:5px;background:var(--raised);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:5px;width:0;transition:width .9s cubic-bezier(.22,1,.36,1)}
+.cat .n{text-align:right;font-size:13px;color:var(--muted)}.cat .n b{color:var(--text);font:600 14px "Google Sans"}
+
+/* Transactions */
+.day{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;padding:14px 0 4px}
+.day .num{font-variant-numeric:tabular-nums}.tx{display:grid;grid-template-columns:36px 1fr auto;gap:0 12px;align-items:center;padding:9px 0}
+.ic{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:16px;grid-row:span 2}
+.ic.in{background:rgba(143,212,180,.12);color:var(--gain)}.ic.out{background:rgba(232,145,154,.12);color:var(--loss)}
+.tx p{font-weight:500}.tx small{color:var(--muted);font-size:13px}
+.amt{font:600 16px "Google Sans";text-align:right}.amt.in{color:var(--gain)}
+.tx small.r{text-align:right}
+.spanall{grid-column:1/-1}.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;grid-column:1/-1}
+
+@media(max-width:900px){.grid,.two{grid-template-columns:minmax(0,1fr)}nav{position:fixed;bottom:12px;left:12px;right:12px;margin:0;justify-content:space-between;z-index:5;box-shadow:0 8px 30px #0008}nav button{flex:1;padding:9px 4px}.wrap{padding:0 12px 84px}header{height:60px;justify-content:space-between}.big{font-size:60px}.chart svg{height:170px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body><div class="wrap">
+<header><span class="logo">StockSync</span>
+<nav><button class="on">Overview</button><button>Products</button><button>Reorder</button><button>History</button></nav>
+<button class="add">Add product</button></header>
+<div class="grid">
+<section class="hero">
+  <h1>Stock on hand</h1>
+  <div class="big num"><span id="total">247</span><small>units</small></div>
+  <span class="delta" id="delta"></span>
+  <div class="chartcap"><span>Total units across all products</span><span>Last 14 days</span></div>
+  <div class="chart" id="chart"><div class="tip" id="tip"></div></div>
+</section>
+<section class="order">
+  <h2>To reorder</h2>
+  <div class="total"><span class="sub">4 products below their alert level</span></div>
+  <div class="list" id="order"></div>
+  <button class="cta">Review order of <span id="ordertotal"></span> units</button>
+</section>
+<div class="two">
+<section>
+  <h2>Is the shop stocked?</h2>
+  <p class="sub">12 products, grouped by how much is left</p>
+  <div class="health"><i style="flex:8;background:var(--gain)"></i><i style="flex:3;background:var(--warn)"></i><i style="flex:1;background:var(--loss)"></i></div>
+  <div class="hkey"><div><b>8</b><span><i style="background:var(--gain)"></i>Enough</span></div><div><b>3</b><span><i style="background:var(--warn)"></i>Running low</span></div><div><b>1</b><span><i style="background:var(--loss)"></i>Sold out</span></div></div>
+  <h2 style="margin-top:24px">Stock by category</h2>
+  <div class="legend"><span><i style="background:var(--accent)"></i>On hand</span><span><i style="background:var(--raised)"></i>Room to target</span></div>
+  <div id="cats"></div>
+</section>
+<section>
+  <div style="display:flex;justify-content:space-between;align-items:baseline"><h2>Stock changes</h2><button class="sub">See all</button></div>
+  <div id="tx"></div>
+</section>
+</div></div></div>
+<script>
+const days=["Oct 17","Oct 18","Oct 19","Oct 20","Oct 21","Oct 22","Oct 23","Oct 24","Oct 25","Oct 26","Oct 27","Oct 28","Oct 29","Oct 30"];
+const v=[262,262,255,248,271,266,259,252,246,280,274,268,270,247];
+document.getElementById("delta").textContent=`${v[13]-v[6]<0?"−":"+"}${Math.abs(v[13]-v[6])} units in the last 7 days`;
+const box=document.getElementById("chart"),W=800,H=190,L=34,B=24,T=8;
+const yMin=220,yMax=300,X=i=>L+i/13*(W-L),Y=u=>T+(1-(u-yMin)/(yMax-yMin))*(H-B-T);
+let line=v.map((u,i)=>(i?"L":"M")+X(i)+" "+Y(u)).join(" ");
+let grid=[220,240,260,280,300].map(u=>`<line x1="${L}" x2="${W}" y1="${Y(u)}" y2="${Y(u)}" stroke="#26282d" vector-effect="non-scaling-stroke"/><text x="0" y="${Y(u)+4}">${u}</text>`).join("");
+let ticks=[0,3,6,9,13].map(i=>`<text x="${X(i)}" y="${H-4}" text-anchor="${i==13?"end":i==0?"start":"middle"}">${days[i]}</text>`).join("");
+box.insertAdjacentHTML("afterbegin",`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Line chart of total units over 14 days, from 262 to 247">${grid}${ticks}
+<path d="${line} L${W} ${Y(yMin)} L${L} ${Y(yMin)}Z" fill="rgba(138,184,255,.1)"/><path id="ln" d="${line}" fill="none" stroke="#8ab8ff" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+<circle id="dot" r="5" fill="#8ab8ff" cx="${X(13)}" cy="${Y(v[13])}"/></svg>`);
+const tip=document.getElementById("tip"),dot=document.getElementById("dot");
+box.addEventListener("pointermove",e=>{const r=box.getBoundingClientRect(),f=(e.clientX-r.left)/r.width*W,i=Math.max(0,Math.min(13,Math.round((f-L)/(W-L)*13)));
+ dot.setAttribute("cx",X(i));dot.setAttribute("cy",Y(v[i]));tip.innerHTML=`<b>${v[i]} units</b>${days[i]}`;tip.style.left=Math.min(92,Math.max(8,X(i)/W*100))+"%";tip.style.opacity=1});
+box.addEventListener("pointerleave",()=>{tip.style.opacity=0;dot.setAttribute("cx",X(13));dot.setAttribute("cy",Y(v[13]))});
+
+const order=[["Parle-G 250g","Sold out",0,48,"loss"],["Reynolds Blue Pen","8 left, alert at 15",8,80,"warn"],["Maggi 70g","5 left, alert at 6",5,36,"warn"],["Colgate 100g","3 left, alert at 5",3,20,"warn"]];
+document.getElementById("order").innerHTML=order.map(o=>`<div class="item"><p style="font-weight:500">${o[0]}</p><span class="qty">${o[3]-o[2]}</span><span class="state ${o[4]}">${o[1]}</span><span class="of">to order</span></div>`).join("");
+document.getElementById("ordertotal").textContent=order.reduce((s,o)=>s+o[3]-o[2],0);
+
+const cats=[["Stationery",114,230],["Snacks",32,124],["Household",44,80],["Grocery",43,56],["Dairy",14,24]];
+document.getElementById("cats").innerHTML=cats.map(c=>`<div class="cat"><span>${c[0]}</span><div class="bar"><i data-w="${c[1]/c[2]*100}"></i></div><span class="n"><b>${c[1]}</b> of ${c[2]}</span></div>`).join("");
+requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll(".bar i").forEach(b=>b.style.width=b.dataset.w+"%")));
+
+const tx=[["Today, Oct 30",[["Classmate Notebook","Sold",-7,35],["Reynolds Blue Pen","Sold, school order",-12,8],["Tata Salt 1kg","Damaged, torn bags",-4,31]]],["Yesterday, Oct 29",[["Classmate Notebook","Restocked, invoice 2304",18,42],["Parle-G 250g","Sold",-10,0]]]];
+document.getElementById("tx").innerHTML=tx.map(([d,r])=>`<div class="day"><span>${d}</span><span class="num">${(n=>(n<0?"−":"+")+Math.abs(n))(r.reduce((s,x)=>s+x[2],0))} units</span></div>`+r.map(t=>{const c=t[2]>0?"in":"out";return`<div class="tx"><span class="ic ${c}">${t[2]>0?"+":"−"}</span><p>${t[0]}</p><span class="amt ${c}">${t[2]>0?"+":"−"}${Math.abs(t[2])}</span><small>${t[1]}</small><small class="r">${t[3]} left</small></div>`}).join("")).join("");
+</script></body></html>
