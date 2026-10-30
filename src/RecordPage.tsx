@@ -71,12 +71,12 @@ function SaleForm({
 
   function setAmount(product: Product, amount: number) {
     const next = { ...cart };
-    if (amount > 0) next[product.id] = Math.min(amount, product.quantity);
+    if (amount > 0) next[product.id] = amount;
     else delete next[product.id];
     setCart(next);
   }
   function add(product?: Product) {
-    if (!product || product.quantity === 0) return;
+    if (!product) return;
     setAmount(product, (cart[product.id] ?? 0) + 1);
     setSearch("");
   }
@@ -89,7 +89,7 @@ function SaleForm({
     try {
       const changes: StockChange[] = lines.map(({ product, amount }) => ({
         product,
-        action: { kind: "sale", amount, note },
+        action: { kind: "sale", amount, note, clampAtZero: true },
       }));
       const result = await recordStockChanges(
         db,
@@ -119,15 +119,14 @@ function SaleForm({
           <SearchBox
             value={search}
             onChange={setSearch}
-            onEnter={() => add(results.find((product) => product.quantity > 0))}
+            onEnter={() => add(results[0])}
           />
         </div>
         <div className="md:max-h-[28rem] md:overflow-y-auto">
           {results.map((product) => (
             <button
               key={product.id}
-              className="btn-row flex w-full items-center justify-between gap-3 border-t border-line px-pad py-3 disabled:hover:bg-transparent"
-              disabled={product.quantity === 0}
+              className="btn-row flex w-full items-center justify-between gap-3 border-t border-line px-pad py-3"
               onClick={() => add(product)}
             >
               <span className="min-w-0">
@@ -206,8 +205,15 @@ function SaleForm({
                   key={product.id}
                   className="row-in flex items-center gap-2 border-b border-line py-2.5"
                 >
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {product.name}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">
+                      {product.name}
+                    </span>
+                    {amount > product.quantity && (
+                      <span className="block text-caption text-warn">
+                        {product.quantity} on hand, stock goes to 0
+                      </span>
+                    )}
                   </span>
                   <button
                     type="button"
@@ -230,7 +236,6 @@ function SaleForm({
                     type="button"
                     className="step"
                     aria-label={`One more ${product.name}`}
-                    disabled={amount >= product.quantity}
                     onClick={() => setAmount(product, amount + 1)}
                   >
                     <Plus size={14} />

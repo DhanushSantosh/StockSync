@@ -5,7 +5,7 @@ A real-time inventory app for a single shopkeeper. It helps answer three daily q
 ## What it does
 
 - Add and edit products with SKU, category, supplier, low-stock alert level, and restock target, or import them from a CSV file.
-- Record receipts, sales, damaged/lost units, and physical stock counts. Record a multi-item sale at once, or count the shelves at the end of the day and record what is missing as sold. Each write batch keeps the quantity and movement record together, and Security Rules reject negative stock.
+- Record receipts, sales, damaged/lost units, and physical stock counts. Record customer returns, and sales larger than the recorded count, which take stock to zero and note the real amount. Record a multi-item sale at once, or count the shelves at the end of the day and record what is missing as sold. Each write batch keeps the quantity and movement record together, and Security Rules reject negative stock.
 - Keep working offline. Changes are saved on the device and sync on reconnect, and the app can be installed on a phone.
 - Show a live reorder list with suggested quantities, supplier details, copyable text, and CSV download.
 - Browse, search, filter, and export recent stock changes, including before/after quantities and optional notes.
@@ -15,7 +15,7 @@ A real-time inventory app for a single shopkeeper. It helps answer three daily q
 
 Firebase Authentication stores account credentials. Cloud Firestore stores product documents at `users/{uid}/products/{productId}` and time-stamped movement documents at `users/{uid}/movements/{movementId}`. Firestore Security Rules restrict both collections to their account. Standard Firebase Hosting can serve the built web app.
 
-Movement records are write-once through the client rules and remain after a product is deleted. They record actions made in this app; they are not a tamper-proof audit log against a user who controls their own Firebase client. Changes made before this feature was added cannot be reconstructed. The History screen loads the latest 50 movements and exports the currently displayed set. The Overview chart reads the last 14 days of movements, up to 2,000.
+Movement records are write-once through the client rules and remain after a product is deleted. They record actions made in this app; they are not a tamper-proof audit log against a user who controls their own Firebase client. Changes made before this feature was added cannot be reconstructed. The History screen loads 50 movements at a time and exports the full history for the current filters. A change can be undone once, which records a reversing movement rather than editing the original. The Overview chart reads the last 14 days of movements, up to 2,000.
 
 ## Stack
 

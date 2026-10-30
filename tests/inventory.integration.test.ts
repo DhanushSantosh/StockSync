@@ -18,7 +18,9 @@ import {
   createProduct,
   createProducts,
   recordStockChanges,
+  fetchAllMovements,
   removeProduct,
+  undoMovement,
   type Product,
 } from "../src/inventory";
 
@@ -220,4 +222,94 @@ describe("stock movement workflow", () => {
     expect((await listProducts(db))[0].quantity).toBe(7);
     stop();
   }, 15000);
+
+  const oneProduct = async (db: Parameters<typeof collection>[0]) => {
+    await createProduct(db, "alice", { ...shelf, name: "Pen", quantity: 10 });
+    return (await listProducts(db))[0];
+  };
+
+  it("adds a customer return back to stock as its own kind", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await oneProduct(db);
+    await adjustStock(db, "alice", product.id, {
+      kind: "return",
+      amount: 2,
+      note: "Wrong size",
+    });
+    expect((await listProducts(db))[0].quantity).toBe(12);
+    const history = await fetchAllMovements(db, "alice");
+    expect(history.find((item) => item.kind === "return")?.change).toBe(2);
+  });
+
+  it("undoes a change once and refuses a second undo", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await oneProduct(db);
+    await adjustStock(db, "alice", product.id, {
+      kind: "sale",
+      amount: 4,
+      note: "",
+    });
+    const sale = (await fetchAllMovements(db, "alice")).find(
+      (item) => item.kind === "sale",
+    )!;
+    await undoMovement(db, "alice", sale);
+    expect((await listProducts(db))[0].quantity).toBe(10);
+    const undo = (await fetchAllMovements(db, "alice")).find(
+      (item) => item.kind === "undo",
+    );
+    expect(undo).toMatchObject({ undoes: sale.id, change: 4 });
+    await expect(undoMovement(db, "alice", sale)).rejects.toThrow();
+    expect((await listProducts(db))[0].quantity).toBe(10);
+  });
+
+  it("refuses an undo that would take stock below zero", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await oneProduct(db);
+    await adjustStock(db, "alice", product.id, {
+      kind: "restock",
+      amount: 5,
+      note: "",
+    });
+    await adjustStock(db, "alice", product.id, {
+      kind: "sale",
+      amount: 14,
+      note: "",
+    });
+    const restock = (await fetchAllMovements(db, "alice")).find(
+      (item) => item.kind === "restock",
+    )!;
+    await expect(undoMovement(db, "alice", restock)).rejects.toThrow(/below/);
+  });
+
+  it("records an oversell by taking stock to zero with a note", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    const product = await oneProduct(db);
+    await recordStockChanges(db, "alice", [
+      {
+        product,
+        action: { kind: "sale", amount: 13, note: "", clampAtZero: true },
+      },
+    ]);
+    expect((await listProducts(db))[0].quantity).toBe(0);
+    const sale = (await fetchAllMovements(db, "alice")).find(
+      (item) => item.kind === "sale",
+    );
+    expect(sale).toMatchObject({ change: -10, quantityAfter: 0 });
+    expect(sale?.note).toMatch(/13 sold with 10 on hand/);
+  });
+
+  it("reads history past the first 50 changes", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    await createProducts(
+      db,
+      "alice",
+      Array.from({ length: 60 }, (_, index) => ({
+        ...shelf,
+        name: `Item ${index}`,
+        quantity: 1,
+      })),
+    );
+    await waitForPendingWrites(db);
+    expect(await fetchAllMovements(db, "alice")).toHaveLength(60);
+  }, 20000);
 });

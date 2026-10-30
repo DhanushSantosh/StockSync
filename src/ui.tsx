@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { signed, useNow, useTick } from "./display";
 import {
+  canUndo,
   groupByDay,
   movementLabels,
   statusOf,
+  undoneIds,
   type Movement,
   type Product,
 } from "./inventory";
@@ -73,20 +75,61 @@ export function Status({ product }: { product: Product }) {
   return <span className={`text-caption ${tone}`}>{label}</span>;
 }
 
+function ChangeRow({
+  movement,
+  undone,
+}: {
+  movement: Movement;
+  undone: boolean;
+}) {
+  const incoming = movement.change > 0;
+  return (
+    <>
+      <span
+        aria-hidden
+        className={`row-span-2 flex size-9 items-center justify-center rounded-full font-bold ${incoming ? "bg-gain/12 text-gain" : movement.change < 0 ? "bg-loss/12 text-loss" : "bg-raised text-muted"}`}
+      >
+        {incoming ? "+" : movement.change < 0 ? "−" : "0"}
+      </span>
+      <span className="truncate font-medium">{movement.productName}</span>
+      <span
+        className={`tabular text-right text-title font-semibold ${incoming ? "text-gain" : ""}`}
+      >
+        {signed(movement.change)}
+      </span>
+      <span className="hint truncate">
+        {movementLabels[movement.kind]}
+        {movement.note ? `, ${movement.note}` : ""}
+        {undone ? ", undone" : ""}
+      </span>
+      <span className="hint tabular text-right">
+        {movement.quantityAfter} left
+      </span>
+    </>
+  );
+}
+
+const rowLayout =
+  "grid w-full grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-3 py-2.5 text-left";
+
 export function Changes({
   movements,
   limit,
+  onUndo,
 }: {
   movements: Movement[];
   limit?: number;
+  onUndo?: (movement: Movement) => void;
 }) {
   const [seen] = useState(
     () => new Set(movements.map((movement) => movement.id)),
   );
+  const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => {
     for (const movement of movements) seen.add(movement.id);
   }, [movements, seen]);
   const now = useNow();
+  const undone = undoneIds(movements);
   const groups = groupByDay(movements.slice(0, limit), now);
   return (
     <>
@@ -99,31 +142,45 @@ export function Changes({
             </span>
           </div>
           {group.movements.map((movement) => {
-            const incoming = movement.change > 0;
+            const entered = seen.has(movement.id) ? "" : "row-in";
+            const row = (
+              <ChangeRow movement={movement} undone={undone.has(movement.id)} />
+            );
+            if (!onUndo || !canUndo(movement, undone))
+              return (
+                <div key={movement.id} className={`${rowLayout} ${entered}`}>
+                  {row}
+                </div>
+              );
+            const open = selected === movement.id;
             return (
-              <div
-                key={movement.id}
-                className={`grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-3 py-2.5 ${seen.has(movement.id) ? "" : "row-in"}`}
-              >
-                <span
-                  aria-hidden
-                  className={`row-span-2 flex size-9 items-center justify-center rounded-full font-bold ${incoming ? "bg-gain/12 text-gain" : movement.change < 0 ? "bg-loss/12 text-loss" : "bg-raised text-muted"}`}
+              <div key={movement.id} className={entered}>
+                <button
+                  className={`${rowLayout} btn-row`}
+                  aria-expanded={open}
+                  onClick={() => setSelected(open ? null : movement.id)}
                 >
-                  {incoming ? "+" : movement.change < 0 ? "−" : "0"}
-                </span>
-                <p className="truncate font-medium">{movement.productName}</p>
-                <span
-                  className={`tabular text-right text-title font-semibold ${incoming ? "text-gain" : ""}`}
-                >
-                  {signed(movement.change)}
-                </span>
-                <span className="hint truncate">
-                  {movementLabels[movement.kind]}
-                  {movement.note ? `, ${movement.note}` : ""}
-                </span>
-                <span className="hint tabular text-right">
-                  {movement.quantityAfter} left
-                </span>
+                  {row}
+                </button>
+                {open && (
+                  <div className="page flex gap-2 pb-2.5 pl-12">
+                    <button
+                      className="btn-soft flex-1"
+                      onClick={() => {
+                        setSelected(null);
+                        onUndo(movement);
+                      }}
+                    >
+                      Undo this change
+                    </button>
+                    <button
+                      className="btn-soft"
+                      onClick={() => setSelected(null)}
+                    >
+                      Keep
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}

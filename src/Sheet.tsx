@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   adjustStock,
   createProduct,
+  duplicateProblem,
   editProduct,
+  matchCategory,
   removeProduct,
+  similarCategory,
   suggestedReorder,
   type Product,
   type ProductInput,
@@ -32,6 +35,12 @@ const emptyInput: ProductInput = {
 type Mode = StockAction["kind"];
 const modes: { kind: Mode; label: string; noun: string; amount: string }[] = [
   { kind: "sale", label: "Sold", noun: "sale", amount: "Units sold" },
+  {
+    kind: "return",
+    label: "Returned",
+    noun: "return",
+    amount: "Units returned",
+  },
   {
     kind: "restock",
     label: "Restock",
@@ -77,9 +86,10 @@ function StockForm({
       ? current
       : mode === "correction"
         ? entered
-        : mode === "restock"
+        : mode === "restock" || mode === "return"
           ? current + entered
           : current - entered;
+  const short = after < 0 && (mode === "sale" || mode === "damage");
   const modeIndex = modes.findIndex((item) => item.kind === mode);
   const order = suggestedReorder(product);
 
@@ -100,6 +110,7 @@ function StockForm({
         kind: mode,
         amount: entered,
         note,
+        clampAtZero: short,
       });
       onNotice(savedMessage(result, "Stock change recorded."));
       onDone();
@@ -122,8 +133,8 @@ function StockForm({
             {after === current ? "On hand" : "After this change"}
           </p>
           <Ticker
-            value={after}
-            className={`text-display font-medium tracking-tight ${after < 0 ? "text-loss" : ""}`}
+            value={Math.max(after, 0)}
+            className="text-display font-medium tracking-tight"
           />
         </div>
         <p className="pb-1 text-right">
@@ -135,10 +146,12 @@ function StockForm({
       </div>
       <form onSubmit={submit} className="mt-5 space-y-4">
         {error && <Alert>{error}</Alert>}
-        <div className="choice">
+        <div className="choice !grid-cols-3">
           <span
-            className="choice-pill"
-            style={{ transform: `translateX(${modeIndex * 100}%)` }}
+            className="choice-pill !bottom-auto h-control !w-[calc((100%-0.5rem)/3)]"
+            style={{
+              transform: `translate(${(modeIndex % 3) * 100}%, ${Math.floor(modeIndex / 3) * 100}%)`,
+            }}
           />
           {modes.map(({ kind, label }) => (
             <button
@@ -169,6 +182,12 @@ function StockForm({
             required
           />
         </label>
+        {short && (
+          <p className="text-caption text-warn">
+            Only {current} on hand. Stock will go to 0 and the note will show
+            the real amount.
+          </p>
+        )}
         <label className="field-label">
           Note (optional)
           <input
@@ -179,7 +198,9 @@ function StockForm({
           />
         </label>
         <button className="btn-accent w-full" disabled={busy}>
-          {busy ? "Recording…" : `Record ${modes[modeIndex].noun}`}
+          {busy
+            ? "Recording…"
+            : `Record ${modes[modeIndex].noun}${short ? ", stock goes to 0" : ""}`}
         </button>
       </form>
       <dl className="tabular mt-6 grid grid-cols-[1fr_auto] gap-y-2 border-t border-line pt-4 text-muted">
@@ -208,11 +229,13 @@ function StockForm({
 
 function ProductForm({
   product,
+  products,
   onCancel,
   onDone,
   onNotice,
 }: {
   product: Product | null;
+  products: Product[];
   onCancel: () => void;
   onDone: () => void;
   onNotice: (message: string) => void;
@@ -231,6 +254,15 @@ function ProductForm({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const categories = useMemo(
+    () => [...new Set(products.map((item) => item.category))].sort(),
+    [products],
+  );
+  const suppliers = useMemo(
+    () => [...new Set(products.flatMap((item) => item.supplier || []))].sort(),
+    [products],
+  );
+  const suggestion = similarCategory(input.category, categories);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -238,10 +270,16 @@ function ProductForm({
     setBusy(true);
     setError("");
     try {
+      const duplicate = duplicateProblem(input, products, product?.id);
+      if (duplicate) throw new Error(duplicate);
       const uid = auth.currentUser.uid;
+      const saved = {
+        ...input,
+        category: matchCategory(input.category, categories),
+      };
       const result = product
-        ? await editProduct(db, uid, product.id, input)
-        : await createProduct(db, uid, input);
+        ? await editProduct(db, uid, product.id, saved)
+        : await createProduct(db, uid, saved);
       onNotice(
         savedMessage(result, product ? "Product updated." : "Product added."),
       );
@@ -280,6 +318,13 @@ function ProductForm({
           }
           required={required}
           autoFocus={key === "name"}
+          list={
+            key === "category"
+              ? "category-options"
+              : key === "supplier"
+                ? "supplier-options"
+                : undefined
+          }
         />
       </label>
     );
@@ -296,6 +341,25 @@ function ProductForm({
         {field("category", "Category")}
         {field("sku", "SKU (optional)", false, false)}
       </div>
+      <datalist id="category-options">
+        {categories.map((item) => (
+          <option key={item} value={item} />
+        ))}
+      </datalist>
+      <datalist id="supplier-options">
+        {suppliers.map((item) => (
+          <option key={item} value={item} />
+        ))}
+      </datalist>
+      {suggestion && (
+        <button
+          type="button"
+          className="btn-link !text-warn"
+          onClick={() => setInput({ ...input, category: suggestion })}
+        >
+          Did you mean {suggestion}? Use it
+        </button>
+      )}
       <div className="grid grid-cols-2 gap-4">
         {!product && field("quantity", "Opening stock", true)}
         {field("lowStockThreshold", "Alert at", true)}
@@ -442,6 +506,7 @@ export function Sheet({
           {panel.kind === "create" ? (
             <ProductForm
               product={null}
+              products={products}
               onCancel={close}
               onDone={close}
               onNotice={onNotice}
@@ -457,6 +522,7 @@ export function Sheet({
           ) : panel.kind === "edit" ? (
             <ProductForm
               product={product}
+              products={products}
               onCancel={back}
               onDone={back}
               onNotice={onNotice}

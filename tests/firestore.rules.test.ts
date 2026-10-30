@@ -114,4 +114,30 @@ describe("Firestore inventory rules", () => {
     await assertFails(updateDoc(ref, { note: "rewritten" }));
     await assertFails(deleteDoc(ref));
   });
+
+  it("accepts returns and one undo per movement, nothing else", async () => {
+    const alice = env.authenticatedContext("alice").firestore();
+    await assertSucceeds(
+      setDoc(doc(alice, "users/alice/movements/r1"), {
+        ...movement(),
+        kind: "return",
+        change: 2,
+        quantityAfter: 12,
+      }),
+    );
+    const undo = {
+      ...movement(),
+      kind: "undo",
+      change: 2,
+      quantityAfter: 12,
+      undoes: "r1",
+    };
+    const ref = doc(alice, "users/alice/movements/undo-r1");
+    await assertFails(setDoc(ref, { ...undo, undoes: 7 }));
+    await assertFails(setDoc(doc(alice, "users/alice/movements/u2"), undo));
+    const { undoes: _dropped, ...withoutTarget } = undo;
+    await assertFails(setDoc(ref, withoutTarget));
+    await assertSucceeds(setDoc(ref, undo));
+    await assertFails(setDoc(ref, undo));
+  });
 });

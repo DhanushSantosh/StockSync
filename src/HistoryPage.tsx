@@ -1,6 +1,13 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Download, Search } from "lucide-react";
-import { movementLabels, type Movement } from "./inventory";
+import { errorText, savedMessage } from "./display";
+import { auth, db } from "./firebase";
+import {
+  fetchAllMovements,
+  movementLabels,
+  undoMovement,
+  type Movement,
+} from "./inventory";
 import { Alert, Changes } from "./ui";
 
 const csvCell = (value: string | number) =>
@@ -9,28 +16,60 @@ const csvCell = (value: string | number) =>
 export function HistoryPage({
   movements,
   error,
+  hasMore,
+  onLoadMore,
+  onNotice,
 }: {
   movements: Movement[];
   error: string;
+  hasMore: boolean;
+  onLoadMore: () => void;
+  onNotice: (message: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("all");
-  const visible = useMemo(
-    () =>
-      movements.filter(
+  const [problem, setProblem] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const matching = useCallback(
+    (list: Movement[]) =>
+      list.filter(
         (movement) =>
           (kind === "all" || movement.kind === kind) &&
           `${movement.productName} ${movement.note}`
             .toLowerCase()
             .includes(search.toLowerCase().trim()),
       ),
-    [movements, kind, search],
+    [kind, search],
   );
+  const visible = useMemo(() => matching(movements), [matching, movements]);
 
-  function exportCsv() {
+  async function undo(movement: Movement) {
+    if (!db || !auth?.currentUser) return;
+    setProblem("");
+    try {
+      const result = await undoMovement(db, auth.currentUser.uid, movement);
+      onNotice(savedMessage(result, "Change undone."));
+    } catch (cause) {
+      setProblem(errorText(cause));
+    }
+  }
+
+  async function exportCsv() {
+    if (!db || !auth?.currentUser) return;
+    setExporting(true);
+    setProblem("");
+    let all: Movement[];
+    try {
+      all = matching(await fetchAllMovements(db, auth.currentUser.uid));
+    } catch (cause) {
+      setProblem(errorText(cause));
+      return;
+    } finally {
+      setExporting(false);
+    }
     const rows = [
       ["Date", "Product", "Action", "Change", "Before", "After", "Note"],
-      ...visible.map((movement) => [
+      ...all.map((movement) => [
         movement.createdAt?.toDate().toISOString() ?? "",
         movement.productName,
         movementLabels[movement.kind],
@@ -84,10 +123,10 @@ export function HistoryPage({
         <button
           className="btn-soft max-sm:flex-1"
           onClick={exportCsv}
-          disabled={!visible.length}
+          disabled={exporting || !movements.length}
         >
           <Download size={16} />
-          Export CSV
+          {exporting ? "Exporting…" : "Export CSV"}
         </button>
       </div>
       {error && (
@@ -95,12 +134,23 @@ export function HistoryPage({
           <Alert>{error}</Alert>
         </div>
       )}
+      {problem && (
+        <div className="mt-3">
+          <Alert>{problem}</Alert>
+        </div>
+      )}
       {visible.length ? (
         <>
-          <Changes movements={visible} />
+          <Changes movements={visible} onUndo={undo} />
           <p className="hint mt-3">
-            Showing the latest {movements.length} of up to 50 changes.
+            Showing the latest {movements.length} changes. Tap a change to undo
+            it. Export includes your full history.
           </p>
+          {hasMore && (
+            <button className="btn-soft mt-3 w-full" onClick={onLoadMore}>
+              Load older changes
+            </button>
+          )}
         </>
       ) : (
         <p className="hint py-14 text-center">

@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   categoryTotals,
+  canUndo,
   chartAxis,
+  duplicateProblem,
   groupByDay,
   inventorySummary,
+  matchCategory,
+  similarCategory,
   shelfCapacity,
   statusOf,
   suggestedReorder,
   unitsByDay,
   validateProduct,
+  type Movement,
   type Product,
 } from "./inventory";
 
@@ -162,5 +167,72 @@ describe("shelfCapacity", () => {
 
   it("is never zero", () => {
     expect(shelfCapacity({ ...product(0, 0), targetStock: 0 })).toBe(1);
+  });
+});
+
+describe("duplicateProblem", () => {
+  const stock = [
+    { ...product(1), id: "a", name: "Rice 1kg", sku: "RC-1" },
+    { ...product(2), id: "b", name: "Soap", sku: "" },
+  ];
+
+  it("spots a repeated SKU regardless of case", () => {
+    expect(duplicateProblem({ name: "New", sku: " rc-1 " }, stock)).toMatch(
+      /RC-1.*Rice 1kg/,
+    );
+  });
+
+  it("spots a repeated name regardless of case and spacing", () => {
+    expect(duplicateProblem({ name: "  rice   1KG", sku: "" }, stock)).toMatch(
+      /Rice 1kg/,
+    );
+  });
+
+  it("ignores blank SKUs and the product being edited", () => {
+    expect(duplicateProblem({ name: "New", sku: "" }, stock)).toBeNull();
+    expect(duplicateProblem({ name: "Soap", sku: "" }, stock, "b")).toBeNull();
+  });
+});
+
+describe("category matching", () => {
+  const categories = ["Snacks", "Stationery"];
+
+  it("reuses the existing spelling for a different case", () => {
+    expect(matchCategory(" snacks ", categories)).toBe("Snacks");
+  });
+
+  it("keeps a genuinely new category", () => {
+    expect(matchCategory("Dairy", categories)).toBe("Dairy");
+  });
+
+  it("suggests a close category for a likely typo", () => {
+    expect(similarCategory("Snack", categories)).toBe("Snacks");
+    expect(similarCategory("Stationary", categories)).toBe("Stationery");
+  });
+
+  it("stays quiet for exact and unrelated names", () => {
+    expect(similarCategory("snacks", categories)).toBeNull();
+    expect(similarCategory("Dairy", categories)).toBeNull();
+  });
+});
+
+describe("canUndo", () => {
+  const entry = (kind: string, change = -1) =>
+    ({ id: "m1", kind, change }) as Movement;
+
+  it("allows ordinary stock changes", () => {
+    for (const kind of ["sale", "restock", "return", "damage", "correction"])
+      expect(canUndo(entry(kind), new Set())).toBe(true);
+  });
+
+  it("refuses opening stock, deletions, undos and repeat undos", () => {
+    expect(canUndo(entry("opening"), new Set())).toBe(false);
+    expect(canUndo(entry("deleted"), new Set())).toBe(false);
+    expect(canUndo(entry("undo"), new Set())).toBe(false);
+    expect(canUndo(entry("sale"), new Set(["m1"]))).toBe(false);
+  });
+
+  it("has nothing to undo when stock did not change", () => {
+    expect(canUndo(entry("sale", 0), new Set())).toBe(false);
   });
 });

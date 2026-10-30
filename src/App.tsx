@@ -48,6 +48,7 @@ function AppShell({ user }: { user: User }) {
   const [loadError, setLoadError] = useState("");
   const [activityError, setActivityError] = useState("");
   const [notice, setNotice] = useState("");
+  const [historySize, setHistorySize] = useState(50);
   const [page, setPage] = useState<Page>("Overview");
   const [panel, setPanel] = useState<Panel | null>(null);
   const menu = useRef<Partial<Record<Page, HTMLButtonElement | null>>>({});
@@ -98,6 +99,7 @@ function AppShell({ user }: { user: User }) {
     const stopList = subscribeToMovements(
       db,
       user.uid,
+      historySize,
       (items) => {
         setMovements(items);
         setActivityError("");
@@ -115,7 +117,7 @@ function AppShell({ user }: { user: User }) {
       stopList();
       stopChart();
     };
-  }, [user.uid]);
+  }, [user.uid, historySize]);
 
   useEffect(() => {
     if (!notice) return;
@@ -151,7 +153,7 @@ function AppShell({ user }: { user: User }) {
       >
         Skip to content
       </a>
-      <header className="flex min-h-14 flex-wrap items-center gap-1.5 md:min-h-[72px] md:gap-3">
+      <header className="flex min-h-12 flex-wrap items-center gap-1.5 md:min-h-[72px] md:gap-3">
         <span className="text-title font-semibold tracking-tight">
           StockSync
         </span>
@@ -181,7 +183,7 @@ function AppShell({ user }: { user: User }) {
           ))}
         </nav>
         <button
-          className="btn-accent max-md:ml-auto max-md:size-control max-md:!p-0"
+          className="btn-accent max-md:ml-auto max-md:!min-h-11 max-md:size-11 max-md:!p-0"
           aria-label="Add product"
           onClick={add}
         >
@@ -243,7 +245,13 @@ function AppShell({ user }: { user: User }) {
             ) : page === "Reorder" ? (
               <ReorderPage products={products} onSelect={select} />
             ) : (
-              <HistoryPage movements={movements} error={activityError} />
+              <HistoryPage
+                movements={movements}
+                error={activityError}
+                hasMore={movements.length >= historySize}
+                onLoadMore={() => setHistorySize(historySize + 50)}
+                onNotice={setNotice}
+              />
             )}
           </div>
         )}

@@ -1,4 +1,9 @@
-import { validateProduct, type Product, type ProductInput } from "./inventory";
+import {
+  matchCategory,
+  validateProduct,
+  type Product,
+  type ProductInput,
+} from "./inventory";
 
 export const templateCsv = `Name,Category,Quantity,SKU,Alert at,Target,Supplier
 Parle-G 250g,Snacks,24,BIS-250,12,48,Sri Balaji Agencies
@@ -54,7 +59,7 @@ export type ImportProblem = { line: number; message: string };
 
 export function parseProductsCsv(
   text: string,
-  existing: Pick<Product, "name" | "sku">[],
+  existing: Pick<Product, "name" | "sku" | "category">[],
 ) {
   const [head, ...body] = readRows(text.replace(/^﻿/, ""));
   const titles = (head?.cells ?? []).map((title) => title.trim().toLowerCase());
@@ -72,6 +77,7 @@ export function parseProductsCsv(
   const skus = new Set(
     existing.map(({ sku }) => sku.trim().toLowerCase()).filter(Boolean),
   );
+  const categories = [...new Set(existing.map(({ category }) => category))];
   const rows: ProductInput[] = [];
   const problems: ImportProblem[] = [];
   for (const { line, cells } of body) {
@@ -80,7 +86,7 @@ export function parseProductsCsv(
       value(field) === "" ? fallback : Number(value(field));
     const row: ProductInput = {
       name: value("name"),
-      category: value("category"),
+      category: matchCategory(value("category"), categories),
       quantity: number("quantity", 0),
       sku: value("sku"),
       lowStockThreshold: number("alert", 5),
@@ -100,6 +106,7 @@ export function parseProductsCsv(
     }
     names.add(name);
     if (sku) skus.add(sku);
+    if (!categories.includes(row.category)) categories.push(row.category);
     rows.push(row);
   }
   return { rows, problems };

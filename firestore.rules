@@ -20,16 +20,24 @@ service cloud.firestore {
 
     function validMovement(data) {
       return data.keys().hasAll(['productId', 'productName', 'kind', 'change', 'quantityBefore', 'quantityAfter', 'note', 'createdAt'])
-        && data.keys().hasOnly(['productId', 'productName', 'kind', 'change', 'quantityBefore', 'quantityAfter', 'note', 'createdAt'])
+        && data.keys().hasOnly(['productId', 'productName', 'kind', 'change', 'quantityBefore', 'quantityAfter', 'note', 'createdAt', 'undoes'])
         && data.productId is string && data.productId.size() > 0 && data.productId.size() <= 128
         && data.productName is string && data.productName.size() > 0 && data.productName.size() <= 100
-        && data.kind in ['opening', 'restock', 'sale', 'damage', 'correction', 'deleted']
+        && data.kind in ['opening', 'restock', 'sale', 'return', 'damage', 'correction', 'deleted', 'undo']
         && data.change is int
         && data.quantityBefore is int && data.quantityBefore >= 0
         && data.quantityAfter is int && data.quantityAfter >= 0
         && data.quantityAfter == data.quantityBefore + data.change
         && data.note is string && data.note.size() <= 200
         && data.createdAt is timestamp;
+    }
+
+    // An undo's ID comes from its target, so a second undo would be an update
+    // and movements cannot be updated.
+    function validUndo(data, movementId) {
+      return data.kind == 'undo'
+        ? data.keys().hasAll(['undoes']) && data.undoes is string && movementId == 'undo-' + data.undoes
+        : !data.keys().hasAny(['undoes']);
     }
 
     match /users/{uid}/products/{productId} {
@@ -45,6 +53,7 @@ service cloud.firestore {
     match /users/{uid}/movements/{movementId} {
       allow read: if signedInAs(uid);
       allow create: if signedInAs(uid) && validMovement(request.resource.data)
+        && validUndo(request.resource.data, movementId)
         && request.resource.data.createdAt == request.time;
     }
   }

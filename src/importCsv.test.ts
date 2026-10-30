@@ -60,7 +60,7 @@ describe("parseProductsCsv", () => {
   it("skips products that exist already or repeat in the file", () => {
     const { rows, problems } = parseProductsCsv(
       `${header}\nsoap,Home,1,,,,\nPen,Office,1,P-1,,,\nPen 2,Office,1,p-1,,,`,
-      [{ name: "Soap", sku: "" }],
+      [{ name: "Soap", sku: "", category: "Home" }],
     );
     expect(rows.map((row) => row.name)).toEqual(["Pen"]);
     expect(problems.map((problem) => problem.line)).toEqual([2, 4]);
@@ -70,5 +70,13 @@ describe("parseProductsCsv", () => {
     const { rows, problems } = parseProductsCsv("Colour\nRed", []);
     expect(rows).toEqual([]);
     expect(problems[0].message).toMatch(/Name.*Category/);
+  });
+
+  it("reuses an existing category's spelling", () => {
+    const { rows } = parseProductsCsv(
+      `${header}\nA,snacks,1,,,,\nB,SNACKS,1,,,,`,
+      [{ name: "Pen", sku: "", category: "Snacks" }],
+    );
+    expect(rows.map((row) => row.category)).toEqual(["Snacks", "Snacks"]);
   });
 });

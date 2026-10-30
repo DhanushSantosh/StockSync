@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocFromCache,
+  getDocs,
   increment,
   limit,
   onSnapshot,
@@ -40,7 +41,14 @@ export type ProductInput = Pick<
 };
 
 export type MovementKind =
-  "opening" | "restock" | "sale" | "damage" | "correction" | "deleted";
+  | "opening"
+  | "restock"
+  | "sale"
+  | "return"
+  | "damage"
+  | "correction"
+  | "deleted"
+  | "undo";
 export type Movement = {
   id: string;
   productId: string;
@@ -50,22 +58,27 @@ export type Movement = {
   quantityBefore: number;
   quantityAfter: number;
   note: string;
+  undoes?: string;
   createdAt?: Timestamp;
 };
 
 export type StockAction = {
-  kind: "restock" | "sale" | "damage" | "correction";
+  kind: "restock" | "sale" | "return" | "damage" | "correction";
   amount: number;
   note: string;
+  // Sold more than the count says: take stock to zero and keep the real amount.
+  clampAtZero?: boolean;
 };
 
 export const movementLabels: Record<MovementKind, string> = {
   opening: "Opening stock",
   restock: "Restocked",
   sale: "Sold",
+  return: "Returned",
   damage: "Damaged / lost",
   correction: "Stock count",
   deleted: "Product deleted",
+  undo: "Undone",
 };
 
 export function statusOf(product: Product): "out" | "low" | "healthy" {
@@ -180,6 +193,84 @@ export function chartAxis(values: number[]) {
   return { min, max, ticks };
 }
 
+const normalized = (text: string) =>
+  text.trim().toLowerCase().replace(/\s+/g, " ");
+
+export function duplicateProblem(
+  input: Pick<Product, "name" | "sku">,
+  products: Pick<Product, "id" | "name" | "sku">[],
+  ignoreId?: string,
+) {
+  const others = products.filter((product) => product.id !== ignoreId);
+  const sku = normalized(input.sku);
+  const sameSku = sku && others.find((item) => normalized(item.sku) === sku);
+  if (sameSku) return `SKU ${sameSku.sku} is already used by ${sameSku.name}.`;
+  const name = normalized(input.name);
+  const sameName = others.find((item) => normalized(item.name) === name);
+  return sameName
+    ? `You already have a product called ${sameName.name}.`
+    : null;
+}
+
+export function matchCategory(value: string, categories: string[]) {
+  const wanted = normalized(value);
+  return (
+    categories.find((category) => normalized(category) === wanted) ??
+    value.trim()
+  );
+}
+
+function editDistance(a: string, b: string) {
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= a.length; row++) {
+    const current = [row];
+    for (let column = 1; column <= b.length; column++)
+      current[column] = Math.min(
+        previous[column] + 1,
+        current[column - 1] + 1,
+        previous[column - 1] + (a[row - 1] === b[column - 1] ? 0 : 1),
+      );
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+// A likely typo of an existing category, for a "did you mean" prompt.
+export function similarCategory(value: string, categories: string[]) {
+  const wanted = normalized(value);
+  if (wanted.length < 4) return null;
+  if (categories.some((category) => normalized(category) === wanted))
+    return null;
+  return (
+    categories.find(
+      (category) => editDistance(normalized(category), wanted) <= 2,
+    ) ?? null
+  );
+}
+
+const undoable: MovementKind[] = [
+  "restock",
+  "sale",
+  "return",
+  "damage",
+  "correction",
+];
+
+export function undoneIds(movements: Pick<Movement, "undoes">[]) {
+  return new Set(movements.flatMap(({ undoes }) => (undoes ? [undoes] : [])));
+}
+
+export function canUndo(
+  movement: Pick<Movement, "id" | "kind" | "change">,
+  undone: Set<string>,
+) {
+  return (
+    undoable.includes(movement.kind) &&
+    movement.change !== 0 &&
+    !undone.has(movement.id)
+  );
+}
+
 export function validateProduct(
   input: ProductInput,
   creating: boolean,
@@ -238,11 +329,12 @@ export function subscribeToProducts(
 export function subscribeToMovements(
   db: Firestore,
   uid: string,
+  count: number,
   onData: (movements: Movement[]) => void,
   onError: (message: string) => void,
 ) {
   return onSnapshot(
-    query(movementsPath(db, uid), orderBy("createdAt", "desc"), limit(50)),
+    query(movementsPath(db, uid), orderBy("createdAt", "desc"), limit(count)),
     (snapshot) => {
       onData(
         snapshot.docs.map(
@@ -278,6 +370,15 @@ export function subscribeToRecentMovements(
       );
     },
     (error) => onError(error.message),
+  );
+}
+
+export async function fetchAllMovements(db: Firestore, uid: string) {
+  const snapshot = await getDocs(
+    query(movementsPath(db, uid), orderBy("createdAt", "desc")),
+  );
+  return snapshot.docs.map(
+    (item) => ({ id: item.id, ...item.data() }) as Movement,
   );
 }
 
@@ -462,9 +563,10 @@ function nextQuantity({ product, action }: StockChange) {
   const next =
     kind === "correction"
       ? amount
-      : kind === "restock"
+      : kind === "restock" || kind === "return"
         ? product.quantity + amount
         : product.quantity - amount;
+  if (next < 0 && action.clampAtZero) return 0;
   if (!Number.isSafeInteger(next) || next < 0)
     throw new Error(
       `Insufficient stock for ${product.name}: ${product.quantity} on hand.`,
@@ -472,6 +574,13 @@ function nextQuantity({ product, action }: StockChange) {
   if (next === product.quantity)
     throw new Error("The stock count is already correct.");
   return next;
+}
+
+function noteFor({ product, action }: StockChange) {
+  const note = action.note.trim();
+  if (!action.clampAtZero || action.amount <= product.quantity) return note;
+  const shortfall = `${action.amount} sold with ${product.quantity} on hand`;
+  return (note ? `${shortfall}. ${note}` : shortfall).slice(0, 200);
 }
 
 // Writes use increment rather than a transaction so they can queue offline.
@@ -484,12 +593,16 @@ export async function recordStockChanges(
   const planned = changes.map((change) => ({
     ...change,
     next: nextQuantity(change),
+    note: noteFor(change),
   }));
   return settleAll(
-    inBatches(db, planned, (batch, { product, action, next }) => {
+    inBatches(db, planned, (batch, { product, action, next, note }) => {
       const change = next - product.quantity;
       batch.update(doc(db, "users", uid, "products", product.id), {
-        quantity: action.kind === "correction" ? next : increment(change),
+        quantity:
+          action.kind === "correction" || action.clampAtZero
+            ? next
+            : increment(change),
         updatedAt: serverTimestamp(),
       });
       batch.set(doc(movementsPath(db, uid)), {
@@ -499,7 +612,7 @@ export async function recordStockChanges(
         change,
         quantityBefore: product.quantity,
         quantityAfter: next,
-        note: action.note.trim(),
+        note,
         createdAt: serverTimestamp(),
       });
     }),
@@ -514,4 +627,34 @@ export async function adjustStock(
 ) {
   const product = await readProduct(db, uid, id);
   return recordStockChanges(db, uid, [{ product, action }]);
+}
+
+export async function undoMovement(
+  db: Firestore,
+  uid: string,
+  movement: Movement,
+) {
+  const product = await readProduct(db, uid, movement.productId);
+  const next = product.quantity - movement.change;
+  if (next < 0)
+    throw new Error(
+      `This would take ${product.name} below zero. Record a stock count instead.`,
+    );
+  const batch = writeBatch(db);
+  batch.update(doc(db, "users", uid, "products", product.id), {
+    quantity: increment(0 - movement.change),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(movementsPath(db, uid), `undo-${movement.id}`), {
+    productId: product.id,
+    productName: product.name,
+    kind: "undo",
+    change: 0 - movement.change,
+    quantityBefore: product.quantity,
+    quantityAfter: next,
+    note: movementLabels[movement.kind],
+    undoes: movement.id,
+    createdAt: serverTimestamp(),
+  });
+  return settle(batch.commit());
 }
