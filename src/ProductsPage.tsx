@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Upload } from "lucide-react";
 import { shelfCapacity, statusOf, type Product } from "./inventory";
 import { Status, Ticker } from "./ui";
 
@@ -13,10 +13,12 @@ export function ProductsPage({
   products,
   onSelect,
   onAdd,
+  onImport,
 }: {
   products: Product[];
   onSelect: (product: Product) => void;
   onAdd: () => void;
+  onImport: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All categories");
@@ -41,8 +43,8 @@ export function ProductsPage({
 
   return (
     <section className="panel !p-0">
-      <div className="flex flex-wrap gap-3 p-5">
-        <label className="relative min-w-48 flex-1">
+      <div className="flex flex-wrap gap-2 p-4 sm:gap-3 sm:p-5">
+        <label className="relative min-w-full flex-1 sm:min-w-48">
           <Search
             size={16}
             className="absolute top-1/2 left-3.5 -translate-y-1/2 text-muted"
@@ -56,7 +58,7 @@ export function ProductsPage({
           />
         </label>
         <select
-          className="field !mt-0 !w-auto"
+          className="field !mt-0 !w-auto min-w-0 max-sm:flex-1"
           aria-label="Filter by category"
           value={category}
           onChange={(event) => setCategory(event.target.value)}
@@ -65,6 +67,10 @@ export function ProductsPage({
             <option key={item}>{item}</option>
           ))}
         </select>
+        <button className="btn-soft max-sm:flex-1" onClick={onImport}>
+          <Upload size={16} />
+          Import CSV
+        </button>
       </div>
       {products.length === 0 ? (
         <div className="px-5 pt-8 pb-14 text-center">
@@ -98,6 +104,10 @@ export function ProductsPage({
                 </span>
                 <span className="hint block truncate">
                   {product.sku || "No SKU"}
+                  <span className="md:hidden">
+                    {", "}
+                    <Status product={product} />
+                  </span>
                 </span>
               </span>
               <span className="hint hidden truncate md:block">

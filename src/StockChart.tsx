@@ -40,9 +40,10 @@ export function StockChart({
         ))}
       </div>
       <div
-        className="relative h-44 touch-none"
+        className="relative h-36 touch-pan-y sm:h-44"
         role="img"
         aria-label={`Line chart of total units per day from ${days[0].units} on ${shortDate(days[0].date)} to ${days[days.length - 1].units} today`}
+        onPointerDown={hover}
         onPointerMove={hover}
         onPointerLeave={() => setHovered(null)}
       >

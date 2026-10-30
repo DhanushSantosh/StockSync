@@ -79,9 +79,9 @@ export function ReorderPage({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 md:space-y-4">
       <section className="panel flex flex-wrap items-center gap-x-5 gap-y-3">
-        <div className="mr-auto">
+        <div className="mr-auto max-sm:w-full">
           <h2 className="heading">
             Order <Ticker value={total} /> units
           </h2>
@@ -91,7 +91,7 @@ export function ReorderPage({
           </p>
         </div>
         <button
-          className="btn-soft"
+          className="btn-soft max-sm:flex-1"
           onClick={copyList}
           disabled={!ready.length}
         >
@@ -99,7 +99,7 @@ export function ReorderPage({
           Copy list
         </button>
         <button
-          className="btn-soft"
+          className="btn-soft max-sm:flex-1"
           onClick={exportCsv}
           disabled={!items.length}
         >

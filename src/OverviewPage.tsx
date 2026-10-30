@@ -26,6 +26,7 @@ export function OverviewPage({
   activityError,
   onSelect,
   onAdd,
+  onImport,
   onNavigate,
 }: {
   products: Product[];
@@ -34,6 +35,7 @@ export function OverviewPage({
   activityError: string;
   onSelect: (product: Product) => void;
   onAdd: () => void;
+  onImport: () => void;
   onNavigate: (page: "Reorder" | "History") => void;
 }) {
   const now = useNow();
@@ -60,21 +62,26 @@ export function OverviewPage({
         <p className="hint mt-1.5">
           Your stock, reorders and changes will appear here.
         </p>
-        <button className="btn-accent mt-5" onClick={onAdd}>
-          Add product
-        </button>
+        <div className="mt-5 flex justify-center gap-2">
+          <button className="btn-accent" onClick={onAdd}>
+            Add product
+          </button>
+          <button className="btn-soft !rounded-full" onClick={onImport}>
+            Import CSV
+          </button>
+        </div>
       </section>
     );
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
-      <section className="panel !px-6 !pt-6">
+    <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] md:gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+      <section className="panel !px-5 !pt-5 sm:!px-6 sm:!pt-6">
         <h1 className="text-[15px] font-medium">Stock on hand</h1>
         <p className="mt-1.5 flex items-baseline gap-2.5">
           <Ticker
             value={summary.units}
             countIn
-            className="text-[64px] leading-none font-medium tracking-tight sm:text-7xl"
+            className="text-[56px] leading-none font-medium tracking-tight sm:text-7xl"
           />
           <span className="text-xl font-medium text-muted">units</span>
         </p>
@@ -95,7 +102,7 @@ export function OverviewPage({
             ? `${lowItems.length} ${lowItems.length === 1 ? "product" : "products"} at or below their alert level`
             : "Every product is above its alert level"}
         </p>
-        <div className="-mx-5 mt-3.5 flex-1">
+        <div className="-mx-5 mt-3.5 flex-1 max-md:[&>button:nth-child(n+4)]:hidden">
           {lowItems.slice(0, 5).map((product) => {
             const order = suggestedReorder(product);
             return (

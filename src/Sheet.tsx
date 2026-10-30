@@ -11,10 +11,13 @@ import {
   type ProductInput,
   type StockAction,
 } from "./inventory";
+import { errorText, savedMessage } from "./display";
+import { ImportProducts } from "./ImportProducts";
 import { Alert, Status, Ticker } from "./ui";
 
 export type Panel =
-  { kind: "create" } | { kind: "stock" | "edit" | "delete"; id: string };
+  | { kind: "create" | "import" }
+  | { kind: "stock" | "edit" | "delete"; id: string };
 
 const emptyInput: ProductInput = {
   name: "",
@@ -48,9 +51,6 @@ const modes: { kind: Mode; label: string; noun: string; amount: string }[] = [
     amount: "Units counted",
   },
 ];
-
-const errorText = (cause: unknown) =>
-  cause instanceof Error ? cause.message : "Saving failed. Try again.";
 
 function StockForm({
   product,
@@ -96,12 +96,12 @@ function StockForm({
         (mode !== "correction" && entered === 0)
       )
         throw new Error("Enter a whole number of units.");
-      await adjustStock(db, auth.currentUser.uid, product.id, {
+      const result = await adjustStock(db, auth.currentUser.uid, product.id, {
         kind: mode,
         amount: entered,
         note,
       });
-      onNotice("Stock change recorded.");
+      onNotice(savedMessage(result, "Stock change recorded."));
       onDone();
     } catch (cause) {
       setError(errorText(cause));
@@ -239,9 +239,12 @@ function ProductForm({
     setError("");
     try {
       const uid = auth.currentUser.uid;
-      if (product) await editProduct(db, uid, product.id, input);
-      else await createProduct(db, uid, input);
-      onNotice(product ? "Product updated." : "Product added.");
+      const result = product
+        ? await editProduct(db, uid, product.id, input)
+        : await createProduct(db, uid, input);
+      onNotice(
+        savedMessage(result, product ? "Product updated." : "Product added."),
+      );
       onDone();
     } catch (cause) {
       setError(errorText(cause));
@@ -334,8 +337,8 @@ function DeleteConfirm({
     setBusy(true);
     setError("");
     try {
-      await removeProduct(db, auth.currentUser.uid, product.id);
-      onNotice("Product deleted.");
+      const result = await removeProduct(db, auth.currentUser.uid, product.id);
+      onNotice(savedMessage(result, "Product deleted."));
       onDone();
     } catch (cause) {
       setError(errorText(cause));
@@ -415,12 +418,16 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-label={
-          panel.kind === "create" ? "Add product" : (product?.name ?? "Product")
+          panel.kind === "create"
+            ? "Add product"
+            : panel.kind === "import"
+              ? "Import products"
+              : (product?.name ?? "Product")
         }
-        className={`relative max-h-[92dvh] w-full overflow-y-auto rounded-t-[20px] bg-panel p-5 sm:my-2 sm:mr-2 sm:max-h-none sm:max-w-md sm:rounded-[20px] sm:p-6 ${closing ? "sheet-closing" : "sheet"}`}
+        className={`relative max-h-[92dvh] w-full overflow-y-auto rounded-t-[20px] bg-panel p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:my-2 sm:mr-2 sm:max-h-none sm:max-w-md sm:rounded-[20px] sm:p-6 ${closing ? "sheet-closing" : "sheet"}`}
       >
         <button
-          className="absolute top-4 right-4 flex size-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-raised hover:text-fg"
+          className="absolute top-3 right-3 flex size-11 items-center justify-center rounded-full text-muted transition-colors hover:bg-raised hover:text-fg"
           aria-label="Close"
           onClick={close}
         >
@@ -431,6 +438,12 @@ export function Sheet({
             <ProductForm
               product={null}
               onCancel={close}
+              onDone={close}
+              onNotice={onNotice}
+            />
+          ) : panel.kind === "import" ? (
+            <ImportProducts
+              products={products}
               onDone={close}
               onNotice={onNotice}
             />

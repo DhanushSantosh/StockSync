@@ -1,6 +1,12 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, getAuth, type Auth } from "firebase/auth";
-import { connectFirestoreEmulator, getFirestore, type Firestore } from "firebase/firestore";
+import {
+  connectFirestoreEmulator,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from "firebase/firestore";
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -12,7 +18,13 @@ const config = {
 export const configured = Object.values(config).every(Boolean);
 const app: FirebaseApp | null = configured ? initializeApp(config) : null;
 export const auth: Auth | null = app ? getAuth(app) : null;
-export const db: Firestore | null = app ? getFirestore(app) : null;
+export const db: Firestore | null = app
+  ? initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    })
+  : null;
 
 if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true" && auth && db) {
   connectAuthEmulator(auth, "http://127.0.0.1:9099");

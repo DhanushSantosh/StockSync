@@ -1,17 +1,20 @@
 import {
   collection,
   doc,
+  getDoc,
+  getDocFromCache,
+  increment,
   limit,
   onSnapshot,
   orderBy,
   query,
-  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
   writeBatch,
   type Firestore,
   type Timestamp,
+  type WriteBatch,
 } from "firebase/firestore";
 
 export type Product = {
@@ -278,16 +281,83 @@ export function subscribeToRecentMovements(
   );
 }
 
-export async function createProduct(
+export type SaveResult = "saved" | "queued";
+
+const offlineWait = 8000;
+let reportSyncFailure: (error: unknown) => void = () => {};
+export function onSyncFailure(listener: (error: unknown) => void) {
+  reportSyncFailure = listener;
+}
+
+// Firestore only resolves a write once the server confirms it, so an offline
+// write would wait forever. Past the wait it stays queued on this device.
+function settle(write: Promise<void>): Promise<SaveResult> {
+  return new Promise((resolve, reject) => {
+    let queued = false;
+    const timer = setTimeout(
+      () => {
+        queued = true;
+        resolve("queued");
+      },
+      navigator.onLine === false ? 0 : offlineWait,
+    );
+    write.then(
+      () => {
+        clearTimeout(timer);
+        resolve("saved");
+      },
+      (error) => {
+        clearTimeout(timer);
+        if (queued) reportSyncFailure(error);
+        else reject(error);
+      },
+    );
+  });
+}
+
+async function settleAll(batches: WriteBatch[]): Promise<SaveResult> {
+  const results = await Promise.all(
+    batches.map((batch) => settle(batch.commit())),
+  );
+  return results.includes("queued") ? "queued" : "saved";
+}
+
+// Firestore allows 500 writes per batch; each item here writes two documents.
+const itemsPerBatch = 200;
+function inBatches<T>(
+  db: Firestore,
+  items: T[],
+  write: (batch: WriteBatch, item: T) => void,
+) {
+  const batches: WriteBatch[] = [];
+  for (let start = 0; start < items.length; start += itemsPerBatch) {
+    const batch = writeBatch(db);
+    for (const item of items.slice(start, start + itemsPerBatch))
+      write(batch, item);
+    batches.push(batch);
+  }
+  return batches;
+}
+
+async function readProduct(db: Firestore, uid: string, id: string) {
+  const ref = doc(db, "users", uid, "products", id);
+  let snapshot;
+  try {
+    snapshot = await getDocFromCache(ref);
+  } catch {
+    snapshot = await getDoc(ref);
+  }
+  if (!snapshot.exists()) throw new Error("This product no longer exists.");
+  return { id, ...snapshot.data() } as Product;
+}
+
+function addProduct(
   db: Firestore,
   uid: string,
+  batch: WriteBatch,
   input: ProductInput,
 ) {
-  const error = validateProduct(input, true);
-  if (error) throw new Error(error);
   const productRef = doc(productsPath(db, uid));
-  const movementRef = doc(movementsPath(db, uid));
-  const batch = writeBatch(db);
   batch.set(productRef, {
     name: input.name.trim(),
     sku: input.sku.trim(),
@@ -299,7 +369,7 @@ export async function createProduct(
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-  batch.set(movementRef, {
+  batch.set(doc(movementsPath(db, uid)), {
     productId: productRef.id,
     productName: input.name.trim(),
     kind: "opening",
@@ -309,7 +379,30 @@ export async function createProduct(
     note: "Initial stock",
     createdAt: serverTimestamp(),
   });
-  await batch.commit();
+}
+
+export async function createProducts(
+  db: Firestore,
+  uid: string,
+  inputs: ProductInput[],
+) {
+  for (const input of inputs) {
+    const error = validateProduct(input, true);
+    if (error) throw new Error(`${input.name}: ${error}`);
+  }
+  return settleAll(
+    inBatches(db, inputs, (batch, input) => addProduct(db, uid, batch, input)),
+  );
+}
+
+export async function createProduct(
+  db: Firestore,
+  uid: string,
+  input: ProductInput,
+) {
+  const error = validateProduct(input, true);
+  if (error) throw new Error(error);
+  return createProducts(db, uid, [input]);
 }
 
 export async function editProduct(
@@ -320,37 +413,97 @@ export async function editProduct(
 ) {
   const error = validateProduct(input, false);
   if (error) throw new Error(error);
-  await updateDoc(doc(db, "users", uid, "products", id), {
-    name: input.name.trim(),
-    sku: input.sku.trim(),
-    category: input.category.trim(),
-    lowStockThreshold: input.lowStockThreshold,
-    targetStock: input.targetStock,
-    supplier: input.supplier.trim(),
-    updatedAt: serverTimestamp(),
-  });
+  return settle(
+    updateDoc(doc(db, "users", uid, "products", id), {
+      name: input.name.trim(),
+      sku: input.sku.trim(),
+      category: input.category.trim(),
+      lowStockThreshold: input.lowStockThreshold,
+      targetStock: input.targetStock,
+      supplier: input.supplier.trim(),
+      updatedAt: serverTimestamp(),
+    }),
+  );
 }
 
 export async function removeProduct(db: Firestore, uid: string, id: string) {
-  const ref = doc(db, "users", uid, "products", id);
-  const movementRef = doc(movementsPath(db, uid));
-  await runTransaction(db, async (transaction) => {
-    const snapshot = await transaction.get(ref);
-    if (!snapshot.exists()) throw new Error("This product no longer exists.");
-    const product = snapshot.data();
-    transaction.delete(ref);
-    transaction.set(movementRef, {
-      productId: id,
-      productName: product.name,
-      kind: "deleted",
-      // Not -quantity: -0 is stored as a double and fails the int rule.
-      change: 0 - product.quantity,
-      quantityBefore: product.quantity,
-      quantityAfter: 0,
-      note: "Product removed",
-      createdAt: serverTimestamp(),
-    });
+  const product = await readProduct(db, uid, id);
+  const batch = writeBatch(db);
+  batch.delete(doc(db, "users", uid, "products", id));
+  batch.set(doc(movementsPath(db, uid)), {
+    productId: id,
+    productName: product.name,
+    kind: "deleted",
+    // Not -quantity: -0 is stored as a double and fails the int rule.
+    change: 0 - product.quantity,
+    quantityBefore: product.quantity,
+    quantityAfter: 0,
+    note: "Product removed",
+    createdAt: serverTimestamp(),
   });
+  return settle(batch.commit());
+}
+
+export type StockChange = {
+  product: Pick<Product, "id" | "name" | "quantity">;
+  action: StockAction;
+};
+
+function nextQuantity({ product, action }: StockChange) {
+  const { kind, amount } = action;
+  if (
+    !Number.isSafeInteger(amount) ||
+    amount < 0 ||
+    (kind !== "correction" && amount === 0)
+  )
+    throw new Error("Enter a valid whole-number quantity.");
+  if (action.note.trim().length > 200)
+    throw new Error("Note must be at most 200 characters.");
+  const next =
+    kind === "correction"
+      ? amount
+      : kind === "restock"
+        ? product.quantity + amount
+        : product.quantity - amount;
+  if (!Number.isSafeInteger(next) || next < 0)
+    throw new Error(
+      `Insufficient stock for ${product.name}: ${product.quantity} on hand.`,
+    );
+  if (next === product.quantity)
+    throw new Error("The stock count is already correct.");
+  return next;
+}
+
+// Writes use increment rather than a transaction so they can queue offline.
+// A count sets the exact number, because that is what was seen on the shelf.
+export async function recordStockChanges(
+  db: Firestore,
+  uid: string,
+  changes: StockChange[],
+) {
+  const planned = changes.map((change) => ({
+    ...change,
+    next: nextQuantity(change),
+  }));
+  return settleAll(
+    inBatches(db, planned, (batch, { product, action, next }) => {
+      const change = next - product.quantity;
+      batch.update(doc(db, "users", uid, "products", product.id), {
+        quantity: action.kind === "correction" ? next : increment(change),
+        updatedAt: serverTimestamp(),
+      });
+      batch.set(doc(movementsPath(db, uid)), {
+        productId: product.id,
+        productName: product.name,
+        kind: action.kind,
+        change,
+        quantityBefore: product.quantity,
+        quantityAfter: next,
+        note: action.note.trim(),
+        createdAt: serverTimestamp(),
+      });
+    }),
+  );
 }
 
 export async function adjustStock(
@@ -359,43 +512,6 @@ export async function adjustStock(
   id: string,
   action: StockAction,
 ) {
-  const { kind, amount } = action;
-  if (
-    !Number.isSafeInteger(amount) ||
-    amount < 0 ||
-    (kind !== "correction" && amount === 0)
-  )
-    throw new Error("Enter a valid whole-number quantity.");
-  const note = action.note.trim();
-  if (note.length > 200)
-    throw new Error("Note must be at most 200 characters.");
-  const ref = doc(db, "users", uid, "products", id);
-  const movementRef = doc(movementsPath(db, uid));
-  await runTransaction(db, async (transaction) => {
-    const snapshot = await transaction.get(ref);
-    if (!snapshot.exists()) throw new Error("This product no longer exists.");
-    const product = snapshot.data();
-    const current = product.quantity as number;
-    const next =
-      kind === "correction"
-        ? amount
-        : kind === "restock"
-          ? current + amount
-          : current - amount;
-    if (!Number.isSafeInteger(next) || next < 0)
-      throw new Error("Insufficient stock for this reduction.");
-    if (next === current)
-      throw new Error("The stock count is already correct.");
-    transaction.update(ref, { quantity: next, updatedAt: serverTimestamp() });
-    transaction.set(movementRef, {
-      productId: id,
-      productName: product.name,
-      kind,
-      change: next - current,
-      quantityBefore: current,
-      quantityAfter: next,
-      note,
-      createdAt: serverTimestamp(),
-    });
-  });
+  const product = await readProduct(db, uid, id);
+  return recordStockChanges(db, uid, [{ product, action }]);
 }

@@ -1,0 +1,448 @@
+import { useMemo, useState, type FormEvent } from "react";
+import { ChevronUp, Minus, Plus, Search, X } from "lucide-react";
+import { errorText, savedMessage } from "./display";
+import { auth, db } from "./firebase";
+import {
+  recordStockChanges,
+  type Product,
+  type StockChange,
+} from "./inventory";
+import { Alert, Ticker } from "./ui";
+
+function matches(product: Product, search: string) {
+  return `${product.name} ${product.sku}`
+    .toLowerCase()
+    .includes(search.toLowerCase().trim());
+}
+
+function SearchBox({
+  value,
+  onChange,
+  onEnter,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onEnter?: () => void;
+}) {
+  return (
+    <label className="relative block">
+      <Search
+        size={16}
+        className="absolute top-1/2 left-3.5 -translate-y-1/2 text-muted"
+      />
+      <input
+        className="field !mt-0 !pl-10"
+        aria-label="Find a product"
+        placeholder="Find a product"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && onEnter) {
+            event.preventDefault();
+            onEnter();
+          }
+        }}
+      />
+    </label>
+  );
+}
+
+function SaleForm({
+  products,
+  onNotice,
+}: {
+  products: Product[];
+  onNotice: (message: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [cart, setCart] = useState<Record<string, number>>({});
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [reviewing, setReviewing] = useState(false);
+  const results = products.filter((product) => matches(product, search));
+  const lines = products
+    .filter((product) => cart[product.id])
+    .map((product) => ({ product, amount: cart[product.id] }));
+  const units = lines.reduce((sum, line) => sum + line.amount, 0);
+  const open = reviewing && lines.length > 0;
+
+  function setAmount(product: Product, amount: number) {
+    const next = { ...cart };
+    if (amount > 0) next[product.id] = Math.min(amount, product.quantity);
+    else delete next[product.id];
+    setCart(next);
+  }
+  function add(product?: Product) {
+    if (!product || product.quantity === 0) return;
+    setAmount(product, (cart[product.id] ?? 0) + 1);
+    setSearch("");
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!db || !auth?.currentUser || lines.length === 0) return;
+    setBusy(true);
+    setError("");
+    try {
+      const changes: StockChange[] = lines.map(({ product, amount }) => ({
+        product,
+        action: { kind: "sale", amount, note },
+      }));
+      const result = await recordStockChanges(
+        db,
+        auth.currentUser.uid,
+        changes,
+      );
+      onNotice(
+        savedMessage(
+          result,
+          `Sale of ${units} ${units === 1 ? "unit" : "units"} recorded.`,
+        ),
+      );
+      setCart({});
+      setNote("");
+      setReviewing(false);
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-4 max-md:pb-16 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <section className="panel !px-0 !pb-1">
+        <div className="px-5 pb-3">
+          <SearchBox
+            value={search}
+            onChange={setSearch}
+            onEnter={() => add(results.find((product) => product.quantity > 0))}
+          />
+        </div>
+        <div className="md:max-h-[28rem] md:overflow-y-auto">
+          {results.map((product) => (
+            <button
+              key={product.id}
+              className="btn-row flex w-full items-center justify-between gap-3 border-t border-line px-5 py-3 disabled:hover:bg-transparent"
+              disabled={product.quantity === 0}
+              onClick={() => add(product)}
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-medium">
+                  {product.name}
+                </span>
+                <span className="hint tabular block">
+                  {product.quantity === 0
+                    ? "Sold out"
+                    : `${product.quantity} on hand`}
+                </span>
+              </span>
+              {cart[product.id] ? (
+                <span className="tabular flex size-7 shrink-0 items-center justify-center rounded-full bg-accent font-semibold text-ink">
+                  {cart[product.id]}
+                </span>
+              ) : (
+                <Plus size={18} className="shrink-0 text-accent" />
+              )}
+            </button>
+          ))}
+          {results.length === 0 && (
+            <p className="hint border-t border-line px-5 py-8 text-center">
+              No products match this search.
+            </p>
+          )}
+        </div>
+      </section>
+      {open && (
+        <div
+          className="scrim fixed inset-0 z-40 bg-black/60 md:hidden"
+          onClick={() => setReviewing(false)}
+        />
+      )}
+      {lines.length > 0 && !open && (
+        <button
+          type="button"
+          className="btn-accent row-in fixed inset-x-3 bottom-[calc(var(--tabbar)+0.5rem)] z-30 !justify-between !rounded-2xl !py-3.5 md:hidden"
+          onClick={() => setReviewing(true)}
+        >
+          {units} {units === 1 ? "unit" : "units"} in this sale
+          <span className="flex items-center gap-1">
+            Review
+            <ChevronUp size={17} />
+          </span>
+        </button>
+      )}
+      <form
+        onSubmit={submit}
+        className={`panel flex flex-col self-start max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-50 max-md:max-h-[85dvh] max-md:overflow-y-auto max-md:rounded-b-none max-md:pb-[max(1.25rem,env(safe-area-inset-bottom))] ${open ? "sheet" : "max-md:hidden"}`}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="heading">This sale</h2>
+          <button
+            type="button"
+            className="-mr-2 flex size-11 items-center justify-center text-muted md:hidden"
+            aria-label="Close sale review"
+            onClick={() => setReviewing(false)}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        {lines.length === 0 ? (
+          <p className="hint mt-1">Tap products to add them.</p>
+        ) : (
+          <div className="mt-2">
+            {lines.map(({ product, amount }) => (
+              <div
+                key={product.id}
+                className="row-in flex items-center gap-2 border-b border-line py-2.5"
+              >
+                <span className="min-w-0 flex-1 truncate font-medium">
+                  {product.name}
+                </span>
+                <button
+                  type="button"
+                  className="step"
+                  aria-label={`One less ${product.name}`}
+                  onClick={() => setAmount(product, amount - 1)}
+                >
+                  <Minus size={14} />
+                </button>
+                <input
+                  className="tabular h-10 w-12 shrink-0 rounded-lg bg-raised text-center text-base outline-none focus:ring-1 focus:ring-accent"
+                  aria-label={`Units of ${product.name}`}
+                  inputMode="numeric"
+                  value={amount}
+                  onChange={(event) =>
+                    setAmount(product, Number(event.target.value) || 0)
+                  }
+                />
+                <button
+                  type="button"
+                  className="step"
+                  aria-label={`One more ${product.name}`}
+                  disabled={amount >= product.quantity}
+                  onClick={() => setAmount(product, amount + 1)}
+                >
+                  <Plus size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:text-fg"
+                  aria-label={`Remove ${product.name}`}
+                  onClick={() => setAmount(product, 0)}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <label className="field-label mt-4">
+          Note (optional)
+          <input
+            className="field"
+            maxLength={200}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </label>
+        {error && (
+          <div className="mt-3">
+            <Alert>{error}</Alert>
+          </div>
+        )}
+        <button
+          className="btn-accent mt-4 w-full !py-3"
+          disabled={busy || lines.length === 0}
+        >
+          {busy
+            ? "Recording…"
+            : lines.length
+              ? `Record sale of ${units} ${units === 1 ? "unit" : "units"}`
+              : "Record sale"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function CountForm({
+  products,
+  onNotice,
+}: {
+  products: Product[];
+  onNotice: (message: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [counts, setCounts] = useState<Record<string, string>>({});
+  const [missingSold, setMissingSold] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const visible = products.filter((product) => matches(product, search));
+  const changed = useMemo(
+    () =>
+      products.filter(
+        (product) =>
+          (counts[product.id] ?? "") !== "" &&
+          Number(counts[product.id]) !== product.quantity,
+      ),
+    [products, counts],
+  );
+  const invalid = changed.some(
+    (product) =>
+      !Number.isSafeInteger(Number(counts[product.id])) ||
+      Number(counts[product.id]) < 0,
+  );
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!db || !auth?.currentUser || changed.length === 0) return;
+    setBusy(true);
+    setError("");
+    try {
+      const changes: StockChange[] = changed.map((product) => {
+        const counted = Number(counts[product.id]);
+        const note = "End-of-day count";
+        return {
+          product,
+          action:
+            missingSold && counted < product.quantity
+              ? { kind: "sale", amount: product.quantity - counted, note }
+              : { kind: "correction", amount: counted, note },
+        };
+      });
+      const result = await recordStockChanges(
+        db,
+        auth.currentUser.uid,
+        changes,
+      );
+      onNotice(
+        savedMessage(
+          result,
+          `Count saved for ${changes.length} ${changes.length === 1 ? "product" : "products"}.`,
+        ),
+      );
+      setCounts({});
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="panel !px-0 !pb-0">
+      <div className="px-5 pb-3">
+        <SearchBox value={search} onChange={setSearch} />
+        <p className="hint mt-2.5">
+          Enter what is on the shelf. Leave a product blank to keep its stock.
+        </p>
+      </div>
+      {visible.map((product) => {
+        const value = counts[product.id] ?? "";
+        const difference = value === "" ? 0 : Number(value) - product.quantity;
+        return (
+          <label
+            key={product.id}
+            className="grid cursor-text grid-cols-[minmax(0,1fr)_3.5rem_5rem] items-center gap-3 border-t border-line px-5 py-2.5"
+          >
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{product.name}</span>
+              <span className="hint tabular block">
+                <Ticker value={product.quantity} /> expected
+              </span>
+            </span>
+            <span
+              className={`tabular text-right font-semibold ${difference > 0 ? "text-gain" : difference < 0 ? "text-loss" : "text-muted"}`}
+            >
+              {difference
+                ? `${difference > 0 ? "+" : "−"}${Math.abs(difference)}`
+                : ""}
+            </span>
+            <input
+              className="tabular h-10 w-full rounded-xl bg-raised px-3 text-right text-base outline-none focus:ring-1 focus:ring-accent"
+              aria-label={`Counted units of ${product.name}`}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={value}
+              onChange={(event) =>
+                setCounts({ ...counts, [product.id]: event.target.value })
+              }
+            />
+          </label>
+        );
+      })}
+      <div className="sticky bottom-[var(--tabbar)] rounded-b-[20px] border-t border-line bg-panel p-4 md:bottom-0 md:p-5">
+        {error && (
+          <div className="mb-3">
+            <Alert>{error}</Alert>
+          </div>
+        )}
+        <label className="flex min-h-11 items-center gap-2.5 md:min-h-0">
+          <input
+            type="checkbox"
+            className="size-4 accent-accent"
+            checked={missingSold}
+            onChange={(event) => setMissingSold(event.target.checked)}
+          />
+          Record missing units as sold
+        </label>
+        <button
+          className="btn-accent mt-3 w-full !py-3"
+          disabled={busy || invalid || changed.length === 0}
+        >
+          {busy
+            ? "Saving…"
+            : changed.length
+              ? `Save count for ${changed.length} ${changed.length === 1 ? "product" : "products"}`
+              : "Save count"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+const modes = ["Sale", "End-of-day count"] as const;
+
+export function RecordPage({
+  products,
+  onNotice,
+}: {
+  products: Product[];
+  onNotice: (message: string) => void;
+}) {
+  const [mode, setMode] = useState<(typeof modes)[number]>("Sale");
+  const index = modes.indexOf(mode);
+  return (
+    <div className="mx-auto max-w-5xl space-y-4">
+      <div className="choice mx-auto w-full max-w-sm !grid-cols-2">
+        <span
+          className="choice-pill !w-[calc(50%-4px)]"
+          style={{ transform: `translateX(${index * 100}%)` }}
+        />
+        {modes.map((item) => (
+          <button
+            key={item}
+            className="choice-item"
+            aria-pressed={mode === item}
+            onClick={() => setMode(item)}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+      {products.length === 0 ? (
+        <section className="panel hint py-14 text-center">
+          Add products before recording stock.
+        </section>
+      ) : mode === "Sale" ? (
+        <SaleForm products={products} onNotice={onNotice} />
+      ) : (
+        <CountForm products={products} onNotice={onNotice} />
+      )}
+    </div>
+  );
+}
