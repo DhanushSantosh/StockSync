@@ -102,31 +102,33 @@ export function OverviewPage({
             ? `${lowItems.length} ${lowItems.length === 1 ? "product" : "products"} at or below their alert level`
             : "Every product is above its alert level"}
         </p>
-        <div className="-mx-pad mt-3.5 flex-1 max-md:[&>button:nth-child(n+4)]:hidden">
-          {lowItems.slice(0, 5).map((product) => {
-            const order = suggestedReorder(product);
-            return (
-              <button
-                key={product.id}
-                className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-t border-line px-pad py-3"
-                onClick={() => onSelect(product)}
-              >
-                <span className="truncate font-medium">{product.name}</span>
-                <span className="tabular text-right text-title font-semibold">
-                  {order ?? "–"}
-                </span>
-                <span
-                  className={`text-caption ${product.quantity ? "text-warn" : "text-loss"}`}
+        {lowItems.length > 0 && (
+          <div className="-mx-pad mt-3.5 flex-1 max-md:[&>button:nth-child(n+4)]:hidden">
+            {lowItems.slice(0, 5).map((product) => {
+              const order = suggestedReorder(product);
+              return (
+                <button
+                  key={product.id}
+                  className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-t border-line px-pad py-3"
+                  onClick={() => onSelect(product)}
                 >
-                  {reorderNote(product)}
-                </span>
-                <span className="hint text-right">
-                  {order === null ? "no target" : "to order"}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  <span className="truncate font-medium">{product.name}</span>
+                  <span className="tabular text-right text-title font-semibold">
+                    {order ?? "–"}
+                  </span>
+                  <span
+                    className={`text-caption ${product.quantity ? "text-warn" : "text-loss"}`}
+                  >
+                    {reorderNote(product)}
+                  </span>
+                  <span className="hint text-right">
+                    {order === null ? "no target" : "to order"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         {lowItems.length > 0 && (
           <button
             className="btn-soft mt-3 w-full"
@@ -140,7 +142,8 @@ export function OverviewPage({
       <section className="panel">
         <h2 className="heading">Is the shop stocked?</h2>
         <p className="hint mt-0.5">
-          {summary.products} products, grouped by how much is left
+          {summary.products} {summary.products === 1 ? "product" : "products"},
+          grouped by how much is left
         </p>
         <div className="health mt-3.5" aria-hidden>
           <span className="bg-gain" style={{ flexGrow: healthy }} />

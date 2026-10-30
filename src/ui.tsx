@@ -75,6 +75,9 @@ export function Status({ product }: { product: Product }) {
   return <span className={`text-caption ${tone}`}>{label}</span>;
 }
 
+// These kinds get a fixed note that only repeats their label.
+const autoNoted = ["opening", "deleted"];
+
 function ChangeRow({
   movement,
   undone,
@@ -99,7 +102,9 @@ function ChangeRow({
       </span>
       <span className="hint truncate">
         {movementLabels[movement.kind]}
-        {movement.note ? `, ${movement.note}` : ""}
+        {movement.note && !autoNoted.includes(movement.kind)
+          ? `, ${movement.note}`
+          : ""}
         {undone ? ", undone" : ""}
       </span>
       <span className="hint tabular text-right">

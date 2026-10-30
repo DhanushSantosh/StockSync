@@ -60,6 +60,11 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
+/* Keeps fixed bars on the real bottom edge of an iPhone home-screen app. */
+html {
+  min-height: calc(100% + env(safe-area-inset-top));
+  background: var(--color-ink);
+}
 body {
   @apply bg-ink font-sans text-body text-fg;
 }
@@ -138,6 +143,14 @@ button:disabled {
     @apply mt-1.5 block h-control w-full rounded-control bg-ink px-3.5 text-[max(1rem,var(--size-body))] text-fg outline-none ring-1 ring-outline transition duration-150 placeholder:text-muted focus:ring-2 focus:ring-accent;
   }
 
+  select.field {
+    appearance: none;
+    padding-right: 2.5rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%239a9ea6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.875rem center;
+    background-repeat: no-repeat;
+  }
+
   /* Menu: one pill slides between the views */
   .menu {
     @apply relative flex rounded-full bg-panel p-1;
@@ -164,7 +177,8 @@ button:disabled {
     @apply font-medium text-accent;
   }
   .tab-main {
-    @apply flex size-9 items-center justify-center rounded-full bg-accent text-ink transition-transform duration-150 active:scale-90;
+    /* Taller than the other icons, without pushing its label down. */
+    @apply -my-[5.5px] flex size-8 -translate-y-1 items-center justify-center rounded-full bg-accent text-ink transition-transform duration-150 active:scale-90;
   }
   .tab-count {
     @apply absolute top-1.5 left-1/2 ml-1.5 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-accent px-1 text-micro font-semibold text-ink tabular-nums;

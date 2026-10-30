@@ -78,6 +78,14 @@ export function ReorderPage({
     URL.revokeObjectURL(url);
   }
 
+  if (items.length === 0)
+    return (
+      <section className="panel py-14 text-center">
+        <p className="heading">Nothing to reorder</p>
+        <p className="hint mt-1">Every product is above its alert level.</p>
+      </section>
+    );
+
   return (
     <div className="space-y-gap">
       <section className="panel flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -87,7 +95,7 @@ export function ReorderPage({
           </h2>
           <p className="hint mt-0.5">
             {message ||
-              `${ready.length} of ${items.length} products have a restock target`}
+              `${ready.length} of ${items.length} ${items.length === 1 ? "product has" : "products have"} a restock target`}
           </p>
         </div>
         <button
@@ -107,44 +115,38 @@ export function ReorderPage({
           Download CSV
         </button>
       </section>
-      {items.length === 0 ? (
-        <section className="panel hint py-14 text-center">
-          Every product is above its alert level.
+      {bySupplier.map(([supplier, group]) => (
+        <section key={supplier} className="panel !px-0 !pb-1">
+          <h2 className="heading px-pad pb-3">{supplier}</h2>
+          {group.map((product) => {
+            const order = suggestedReorder(product);
+            return (
+              <button
+                key={product.id}
+                className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 border-t border-line px-pad py-3"
+                onClick={() => onSelect(product)}
+              >
+                <span className="truncate font-medium">{product.name}</span>
+                <span className="tabular text-right text-title font-semibold">
+                  {order ?? "–"}
+                </span>
+                <span>
+                  <Status product={product} />
+                  <span className="hint tabular">
+                    , <Ticker value={product.quantity} />
+                    {product.targetStock
+                      ? ` of ${product.targetStock}`
+                      : " on hand, no target"}
+                  </span>
+                </span>
+                <span className="hint text-right">
+                  {order === null ? "set a target" : "to order"}
+                </span>
+              </button>
+            );
+          })}
         </section>
-      ) : (
-        bySupplier.map(([supplier, group]) => (
-          <section key={supplier} className="panel !px-0 !pb-1">
-            <h2 className="heading px-pad pb-3">{supplier}</h2>
-            {group.map((product) => {
-              const order = suggestedReorder(product);
-              return (
-                <button
-                  key={product.id}
-                  className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 border-t border-line px-pad py-3"
-                  onClick={() => onSelect(product)}
-                >
-                  <span className="truncate font-medium">{product.name}</span>
-                  <span className="tabular text-right text-title font-semibold">
-                    {order ?? "–"}
-                  </span>
-                  <span>
-                    <Status product={product} />
-                    <span className="hint tabular">
-                      , <Ticker value={product.quantity} />
-                      {product.targetStock
-                        ? ` of ${product.targetStock}`
-                        : " on hand, no target"}
-                    </span>
-                  </span>
-                  <span className="hint text-right">
-                    {order === null ? "set a target" : "to order"}
-                  </span>
-                </button>
-              );
-            })}
-          </section>
-        ))
-      )}
+      ))}
     </div>
   );
 }
