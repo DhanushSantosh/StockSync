@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInAs(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function validProduct(data) {
+      return data.keys().hasAll(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.sku is string && data.sku.size() <= 60
+        && data.category is string && data.category.size() > 0 && data.category.size() <= 60
+        && data.quantity is int && data.quantity >= 0
+        && data.lowStockThreshold is int && data.lowStockThreshold >= 0
+        && data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    match /users/{uid}/products/{productId} {
+      allow read, delete: if signedInAs(uid);
+      allow create: if signedInAs(uid) && validProduct(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if signedInAs(uid) && validProduct(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+    }
+  }
+}
