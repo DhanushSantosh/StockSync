@@ -8,6 +8,7 @@ import {
   Boxes,
   Check,
   ChevronDown,
+  ClipboardList,
   CircleHelp,
   LayoutDashboard,
   LogOut,
@@ -16,26 +17,37 @@ import {
   Pencil,
   Plus,
   Search,
+  ShoppingCart,
   Trash2,
   X,
 } from "lucide-react";
 import { auth, configured, db } from "./firebase";
 import {
   inventorySummary,
+  movementLabels,
   statusOf,
+  subscribeToMovements,
   subscribeToProducts,
+  type Movement,
   type Product,
 } from "./inventory";
+import { ActivityPage } from "./ActivityPage";
 import { AuthScreen } from "./AuthScreen";
 import { ProductDialog, type Dialog } from "./ProductDialog";
+import { ReorderPage } from "./ReorderPage";
 import { Banner, Brand, EmptyState, Metric, StatusBadge } from "./ui";
 
 function AppShell({ user }: { user: User }) {
   const [products, setProducts] = useState<Product[]>([]);
+  const [movements, setMovements] = useState<Movement[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [activityError, setActivityError] = useState("");
+  const [activityLoading, setActivityLoading] = useState(true);
   const [notice, setNotice] = useState("");
-  const [page, setPage] = useState<"dashboard" | "inventory">("dashboard");
+  const [page, setPage] = useState<
+    "dashboard" | "inventory" | "reorder" | "activity"
+  >("dashboard");
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All categories");
@@ -80,7 +92,24 @@ function AppShell({ user }: { user: User }) {
     );
   }, [user.uid]);
 
-  function navigate(next: "dashboard" | "inventory") {
+  useEffect(() => {
+    if (!db) return;
+    return subscribeToMovements(
+      db,
+      user.uid,
+      (items) => {
+        setMovements(items);
+        setActivityError("");
+        setActivityLoading(false);
+      },
+      (message) => {
+        setActivityError(`Unable to load activity: ${message}`);
+        setActivityLoading(false);
+      },
+    );
+  }, [user.uid]);
+
+  function navigate(next: "dashboard" | "inventory" | "reorder" | "activity") {
     setPage(next);
     setMobileMenu(false);
     setNotice("");
@@ -100,6 +129,23 @@ function AppShell({ user }: { user: User }) {
       >
         <Package size={18} />
         Inventory
+      </button>
+      <button
+        className={`nav-link ${page === "reorder" ? "nav-active" : ""}`}
+        onClick={() => navigate("reorder")}
+      >
+        <ShoppingCart size={18} /> Reorder{" "}
+        {needsAttention.length > 0 && (
+          <span className="ml-auto rounded-full bg-amber-100 px-2 text-xs font-bold text-amber-700">
+            {needsAttention.length}
+          </span>
+        )}
+      </button>
+      <button
+        className={`nav-link ${page === "activity" ? "nav-active" : ""}`}
+        onClick={() => navigate("activity")}
+      >
+        <ClipboardList size={18} /> Activity
       </button>
     </>
   );
@@ -164,12 +210,22 @@ function AppShell({ user }: { user: User }) {
             <div>
               <span className="eyebrow">YOUR WORKSPACE</span>
               <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
-                {page === "dashboard" ? "Dashboard" : "Inventory"}
+                {page === "dashboard"
+                  ? "Dashboard"
+                  : page === "inventory"
+                    ? "Inventory"
+                    : page === "reorder"
+                      ? "Reorder"
+                      : "Activity"}
               </h1>
               <p className="mt-2 text-sm text-slate-500">
                 {page === "dashboard"
                   ? "A clear picture of what is happening in your store."
-                  : "Manage products and keep quantities up to date."}
+                  : page === "inventory"
+                    ? "Manage products and keep quantities up to date."
+                    : page === "reorder"
+                      ? "Know what to buy before the shelf is empty."
+                      : "See what changed, when, and why."}
               </p>
             </div>
             <button
@@ -325,7 +381,70 @@ function AppShell({ user }: { user: User }) {
                   )}
                 </section>
               </div>
+              <section className="card mt-6">
+                <div className="section-heading">
+                  <div>
+                    <h2 className="section-title">Recent stock changes</h2>
+                    <p className="section-subtitle">
+                      A record of what moved and why
+                    </p>
+                  </div>
+                  <button
+                    className="text-button"
+                    onClick={() => navigate("activity")}
+                  >
+                    View activity <ArrowRight size={15} />
+                  </button>
+                </div>
+                {activityLoading ? (
+                  <p className="py-5 text-sm text-slate-500">
+                    Loading activity…
+                  </p>
+                ) : activityError ? (
+                  <p role="alert" className="py-5 text-sm text-rose-700">
+                    {activityError}
+                  </p>
+                ) : movements.length ? (
+                  <div className="divide-y divide-slate-100">
+                    {movements.slice(0, 4).map((movement) => (
+                      <div
+                        key={movement.id}
+                        className="flex items-center gap-3 py-3 text-sm"
+                      >
+                        <span
+                          className={`font-bold ${movement.change < 0 ? "text-rose-600" : "text-emerald-600"}`}
+                        >
+                          {movement.change > 0 ? "+" : ""}
+                          {movement.change}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {movement.productName}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {movementLabels[movement.kind]}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="py-5 text-sm text-slate-500">
+                    New stock movements will appear here.
+                  </p>
+                )}
+              </section>
             </>
+          ) : page === "reorder" ? (
+            <ReorderPage
+              products={products}
+              onEdit={(product) => setDialog({ kind: "edit", product })}
+              onRestock={(product) => setDialog({ kind: "adjust", product })}
+            />
+          ) : page === "activity" ? (
+            <ActivityPage
+              movements={movements}
+              error={activityError}
+              loading={activityLoading}
+            />
           ) : (
             <section className="card !p-0">
               <div className="flex flex-wrap gap-3 border-b border-slate-100 p-5 sm:p-6">

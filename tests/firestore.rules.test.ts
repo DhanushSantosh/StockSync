@@ -9,6 +9,7 @@ import {
 import {
   doc,
   getDoc,
+  deleteDoc,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -23,6 +24,16 @@ const valid = () => ({
   lowStockThreshold: 5,
   createdAt: serverTimestamp(),
   updatedAt: serverTimestamp(),
+});
+const movement = () => ({
+  productId: "one",
+  productName: "Notebook",
+  kind: "sale",
+  change: -2,
+  quantityBefore: 10,
+  quantityAfter: 8,
+  note: "Customer sale",
+  createdAt: serverTimestamp(),
 });
 
 beforeAll(async () => {
@@ -67,5 +78,40 @@ describe("Firestore inventory rules", () => {
       updateDoc(ref, { quantity: 0, updatedAt: serverTimestamp() }),
     );
     expect((await getDoc(ref)).data()?.quantity).toBe(0);
+  });
+
+  it("accepts reorder fields and protects immutable movement history", async () => {
+    const alice = env.authenticatedContext("alice").firestore();
+    const bob = env.authenticatedContext("bob").firestore();
+    const guest = env.unauthenticatedContext().firestore();
+    await assertSucceeds(
+      setDoc(doc(alice, "users/alice/products/one"), {
+        ...valid(),
+        targetStock: 20,
+        supplier: "Local wholesaler",
+      }),
+    );
+    await assertFails(
+      setDoc(doc(alice, "users/alice/products/bad"), {
+        ...valid(),
+        targetStock: 3,
+      }),
+    );
+    const ref = doc(alice, "users/alice/movements/change1");
+    await assertSucceeds(setDoc(ref, movement()));
+    await assertSucceeds(getDoc(ref));
+    await assertFails(getDoc(doc(bob, "users/alice/movements/change1")));
+    await assertFails(getDoc(doc(guest, "users/alice/movements/change1")));
+    await assertFails(
+      setDoc(doc(bob, "users/alice/movements/change2"), movement()),
+    );
+    await assertFails(
+      setDoc(doc(alice, "users/alice/movements/bad"), {
+        ...movement(),
+        quantityAfter: -1,
+      }),
+    );
+    await assertFails(updateDoc(ref, { note: "rewritten" }));
+    await assertFails(deleteDoc(ref));
   });
 });

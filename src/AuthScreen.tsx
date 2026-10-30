@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import {
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
 } from "firebase/auth";
 import {
@@ -19,11 +20,39 @@ export function AuthScreen() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function resetPassword() {
+    if (!auth) return;
+    if (!email.trim()) {
+      setError("Enter your email address first.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setMessage(
+        "If this address has an account, a reset email is on its way.",
+      );
+    } catch (cause) {
+      const code = (cause as { code?: string }).code;
+      setError(
+        code === "auth/invalid-email"
+          ? "Enter a valid email address."
+          : "Could not send the reset email. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!auth) return;
     setError("");
+    setMessage("");
     setBusy(true);
     try {
       if (mode === "register")
@@ -69,6 +98,7 @@ export function AuthScreen() {
           </div>
           <form onSubmit={submit} className="space-y-5">
             {error && <Banner>{error}</Banner>}
+            {message && <Banner tone="success">{message}</Banner>}
             <label className="field-label">
               Email address
               <input
@@ -96,6 +126,16 @@ export function AuthScreen() {
                 required
               />
             </label>
+            {mode === "login" && (
+              <button
+                type="button"
+                className="-mt-2 block text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                onClick={resetPassword}
+                disabled={busy}
+              >
+                Forgot password?
+              </button>
+            )}
             <button
               className="primary-button w-full justify-center py-3.5"
               disabled={busy}

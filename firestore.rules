@@ -7,13 +7,29 @@ service cloud.firestore {
 
     function validProduct(data) {
       return data.keys().hasAll(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'targetStock', 'supplier', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.sku is string && data.sku.size() <= 60
         && data.category is string && data.category.size() > 0 && data.category.size() <= 60
         && data.quantity is int && data.quantity >= 0
         && data.lowStockThreshold is int && data.lowStockThreshold >= 0
+        && (!('targetStock' in data) || (data.targetStock is int && data.targetStock >= 0 && (data.targetStock == 0 || data.targetStock > data.lowStockThreshold)))
+        && (!('supplier' in data) || (data.supplier is string && data.supplier.size() <= 100))
         && data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function validMovement(data) {
+      return data.keys().hasAll(['productId', 'productName', 'kind', 'change', 'quantityBefore', 'quantityAfter', 'note', 'createdAt'])
+        && data.keys().hasOnly(['productId', 'productName', 'kind', 'change', 'quantityBefore', 'quantityAfter', 'note', 'createdAt'])
+        && data.productId is string && data.productId.size() > 0 && data.productId.size() <= 128
+        && data.productName is string && data.productName.size() > 0 && data.productName.size() <= 100
+        && data.kind in ['opening', 'restock', 'sale', 'damage', 'correction', 'deleted']
+        && data.change is int
+        && data.quantityBefore is int && data.quantityBefore >= 0
+        && data.quantityAfter is int && data.quantityAfter >= 0
+        && data.quantityAfter == data.quantityBefore + data.change
+        && data.note is string && data.note.size() <= 200
+        && data.createdAt is timestamp;
     }
 
     match /users/{uid}/products/{productId} {
@@ -24,6 +40,12 @@ service cloud.firestore {
       allow update: if signedInAs(uid) && validProduct(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time;
+    }
+
+    match /users/{uid}/movements/{movementId} {
+      allow read: if signedInAs(uid);
+      allow create: if signedInAs(uid) && validMovement(request.resource.data)
+        && request.resource.data.createdAt == request.time;
     }
   }
 }

@@ -1,6 +1,20 @@
 # StockSync
 
-A small, real-time inventory app for a single shopkeeper. Each account has its own products. The app supports product management, stock adjustments, low-stock alerts, a live dashboard, and responsive layouts.
+A real-time inventory app for a single shopkeeper. It helps answer three daily questions: what is on hand, what needs reordering, and why did the count change?
+
+## What it does
+
+- Add and edit products with SKU, category, supplier, low-stock alert level, and restock target.
+- Record receipts, sales, damaged/lost units, and physical stock counts. Firestore transactions keep the quantity and movement record together, and reject negative stock.
+- Show a live reorder list with suggested quantities, supplier details, copyable text, and CSV download.
+- Browse, search, filter, and export recent stock movements, including before/after quantities and optional notes.
+- See live dashboard totals and stock alerts on multiple signed-in devices. Firebase Authentication also provides password-reset email.
+
+## What is stored in Firebase
+
+Firebase Authentication stores account credentials. Cloud Firestore stores product documents at `users/{uid}/products/{productId}` and time-stamped movement documents at `users/{uid}/movements/{movementId}`. Firestore Security Rules restrict both collections to their account. Standard Firebase Hosting can serve the built web app.
+
+Movement records are write-once through the client rules and remain after a product is deleted. They record actions made in this app; they are not a tamper-proof audit log against a user who controls their own Firebase client. Changes made before this feature was added cannot be reconstructed. The Activity screen loads the latest 50 movements and exports the currently displayed set.
 
 ## Stack
 
@@ -16,7 +30,7 @@ React, TypeScript, Vite, Tailwind CSS, Firebase Authentication, Cloud Firestore,
 6. Run `npm install` and `npm run dev`, then open the local URL shown by Vite.
 7. Sign in to the Firebase CLI with `npx firebase login`, then deploy the access rules with `npx firebase deploy --project YOUR_PROJECT_ID --only firestore:rules`. Do this before adding products.
 
-The web app config connects the browser to Firebase. Access to products is enforced by `firestore.rules`, with each account limited to `users/{uid}/products`.
+The web app config connects the browser to Firebase. Access to products and movements is enforced by `firestore.rules`.
 
 ## Verify
 
@@ -54,8 +68,8 @@ Firebase Hosting serves the `dist` folder and rewrites routes to `index.html`. B
 
 ## Demo
 
-Register an account, add a product, and open StockSync in a second browser window with the same account. Adjust stock in one window; the other window and dashboard update automatically. Try reducing more units than available to see the transaction reject a negative quantity. Sign in with another account to confirm that inventories are separate.
+Register an account, add a product with a restock target, and open StockSync in a second browser window with the same account. Record a sale in one window; the other window, dashboard, Activity, and Reorder screens update automatically. Try reducing more units than available to see the transaction reject a negative quantity. Sign in with another account to confirm that inventories are separate.
 
 ## Scope
 
-One account represents one shopkeeper and one inventory. Staff roles, shared inventories, product photos, payments, and forecasting are outside this mini-project.
+One account represents one shopkeeper and one inventory. Staff roles, shared inventories, product photos, payments, and forecasting are outside this mini-project. Stock transactions require a network connection; offline changes are not queued. Cloud Storage and Cloud Functions require billing on the current Firebase Spark plan, so this app does not depend on them.
