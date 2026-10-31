@@ -1,5 +1,14 @@
 import { readFileSync } from "node:fs";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
@@ -46,6 +55,7 @@ beforeAll(async () => {
   });
 });
 beforeEach(async () => env.clearFirestore());
+afterEach(() => vi.unstubAllGlobals());
 afterAll(async () => env?.cleanup());
 
 describe("stock movement workflow", () => {
@@ -233,6 +243,20 @@ describe("stock movement workflow", () => {
     const stop = onSnapshot(collection(db, "users/alice/products"), () => {});
     await getDocs(collection(db, "users/alice/products"));
     await disableNetwork(db);
+    vi.stubGlobal("navigator", { onLine: false });
+    await expect(
+      recordStockChanges(db, "alice", [
+        { product, action: { kind: "correction", amount: 9, note: "" } },
+      ]),
+    ).rejects.toThrow(/Connect to the internet/);
+    await expect(
+      recordStockChanges(db, "alice", [
+        {
+          product,
+          action: { kind: "sale", amount: 11, note: "", clampAtZero: true },
+        },
+      ]),
+    ).rejects.toThrow(/Connect to the internet/);
     const result = await adjustStock(db, "alice", product.id, {
       kind: "sale",
       amount: 3,
@@ -355,6 +379,68 @@ describe("stock movement workflow", () => {
     );
     expect(sale).toMatchObject({ change: 0, revenue: 2000 });
     expect(sale?.note).toMatch(/2 sold with 0 on hand/);
+  });
+
+  it("uses the latest stock for successive sales from a stale screen", async () => {
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const product = await oneProduct(db);
+    const sale = [
+      {
+        product,
+        action: {
+          kind: "sale" as const,
+          amount: 4,
+          note: "",
+          clampAtZero: true,
+        },
+      },
+    ];
+    await recordStockChanges(db, "alice", sale);
+    await recordStockChanges(db, "alice", sale);
+    expect((await listProducts(db))[0].quantity).toBe(2);
+    expect(
+      (await fetchAllMovements(db, "alice"))
+        .filter((item) => item.kind === "sale")
+        .map((item) => [item.quantityBefore, item.quantityAfter])
+        .sort((a, b) => b[0] - a[0]),
+    ).toEqual([
+      [10, 6],
+      [6, 2],
+    ]);
+  });
+
+  it("retries simultaneous sales from two clients", async () => {
+    const first = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const second = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const product = await oneProduct(first);
+    const sale = [
+      {
+        product,
+        action: {
+          kind: "sale" as const,
+          amount: 4,
+          note: "",
+          clampAtZero: true,
+        },
+      },
+    ];
+    await Promise.all([
+      recordStockChanges(first, "alice", sale),
+      recordStockChanges(second, "alice", sale),
+    ]);
+    expect((await listProducts(first))[0].quantity).toBe(2);
+    expect(
+      (await fetchAllMovements(first, "alice"))
+        .filter((item) => item.kind === "sale")
+        .map((item) => item.quantityAfter)
+        .sort((a, b) => a - b),
+    ).toEqual([2, 6]);
   });
 
   it("reads history past the first 50 changes", async () => {

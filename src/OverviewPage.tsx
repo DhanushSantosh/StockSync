@@ -5,18 +5,20 @@ import {
   categoryTotals,
   expiringSoon,
   formatMoney,
+  formatQuantity,
   inventorySummary,
   salesSummary,
   statusOf,
   stockValue,
   suggestedReorder,
+  unitSuffix,
   unitsByDay,
   type Movement,
   type Product,
 } from "./inventory";
 import { StockChart } from "./StockChart";
 import { Alert, Changes, Ticker } from "./ui";
-import { t } from "./i18n";
+import { currentLanguage, t } from "./i18n";
 
 const chartDays = 14;
 
@@ -95,6 +97,11 @@ export function OverviewPage({
     0,
   );
   const healthy = summary.products - summary.low - summary.out;
+  const recentProducts = [...products]
+    .sort(
+      (a, b) => (b.updatedAt?.toMillis() ?? 0) - (a.updatedAt?.toMillis() ?? 0),
+    )
+    .slice(0, 3);
   const weekChange = summary.units - days[chartDays - 8].units;
 
   if (products.length === 0)
@@ -304,6 +311,34 @@ export function OverviewPage({
             </span>
           </div>
         ))}
+      </section>
+
+      <section className="panel">
+        <h2 className="heading">{t("Recently updated products")}</h2>
+        <div className="-mx-pad mt-3">
+          {recentProducts.map((product) => (
+            <button
+              key={product.id}
+              className="btn-row flex w-full items-center justify-between gap-3 border-t border-line px-pad py-2.5"
+              onClick={() => onSelect(product)}
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-medium">
+                  {product.name}
+                </span>
+                <span className="hint block">
+                  {product.updatedAt
+                    ? `${t("Updated")} ${product.updatedAt.toDate().toLocaleDateString(currentLanguage() === "hi" ? "hi-IN" : "en-IN", { day: "numeric", month: "short" })}`
+                    : t("Syncing update…")}
+                </span>
+              </span>
+              <span className="tabular shrink-0 font-semibold">
+                {formatQuantity(product.quantity)}
+                {unitSuffix(product)}
+              </span>
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="panel">

@@ -11,6 +11,7 @@ import {
   writeBatch,
   type Firestore,
   type Timestamp,
+  type Transaction,
   type WriteBatch,
 } from "firebase/firestore";
 import { settle } from "./firestoreWrites";
@@ -61,24 +62,33 @@ export async function addCustomer(
 export function writeCredit(
   db: Firestore,
   uid: string,
-  batch: WriteBatch,
+  batch: WriteBatch | Transaction,
   customer: Pick<Customer, "id" | "name">,
   amount: number,
   note: string,
   actor?: string,
 ) {
-  batch.update(doc(db, "users", uid, "customers", customer.id), {
+  const customerRef = doc(db, "users", uid, "customers", customer.id);
+  const entryRef = doc(collection(db, "users", uid, "creditEntries"));
+  const update = {
     balance: increment(amount),
     updatedAt: serverTimestamp(),
-  });
-  batch.set(doc(collection(db, "users", uid, "creditEntries")), {
+  };
+  const entry = {
     customerId: customer.id,
     customerName: customer.name,
     amount,
     note: note.trim(),
     ...(actor ? { by: actor } : {}),
     createdAt: serverTimestamp(),
-  });
+  };
+  if ("commit" in batch) {
+    batch.update(customerRef, update);
+    batch.set(entryRef, entry);
+  } else {
+    batch.update(customerRef, update);
+    batch.set(entryRef, entry);
+  }
 }
 
 export function recordCredit(

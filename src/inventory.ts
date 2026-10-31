@@ -9,12 +9,14 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
   writeBatch,
   type Firestore,
   type Timestamp,
+  type Transaction,
   type WriteBatch,
 } from "firebase/firestore";
 import { inBatches, settle, settleAll } from "./firestoreWrites";
@@ -709,32 +711,31 @@ function noteFor({ product, action }: StockChange) {
   return (note ? `${shortfall}. ${note}` : shortfall).slice(0, 200);
 }
 
-// Writes use increment rather than a transaction so they can queue offline.
-// A count sets the exact number, because that is what was seen on the shelf.
+// Online writes read current stock in a transaction. Offline relative changes
+// use increments so they can queue until the device reconnects.
 type PlannedStockChange = StockChange & { next: number; note: string };
 
 function writeStockChange(
   db: Firestore,
   uid: string,
-  batch: WriteBatch,
+  batch: WriteBatch | Transaction,
   { product, action, next, note }: PlannedStockChange,
   actor?: string,
+  offline = false,
 ) {
   const change = roundQuantity(next - product.quantity);
-  batch.update(doc(db, "users", uid, "products", product.id), {
-    // Decimals would drift under increment, so loose goods store the total.
-    quantity:
-      action.kind === "correction" || action.clampAtZero || isLoose(product)
-        ? next
-        : increment(change),
+  const productRef = doc(db, "users", uid, "products", product.id);
+  const movementRef = doc(movementsPath(db, uid));
+  const update = {
+    quantity: offline ? increment(change) : next,
     ...(action.expiryDate ? { expiryDate: action.expiryDate } : {}),
     // A delivery comes off whatever was on order.
     ...(action.kind === "restock" && product.onOrder
       ? { onOrder: Math.max(product.onOrder - action.amount, 0) }
       : {}),
     updatedAt: serverTimestamp(),
-  });
-  batch.set(doc(movementsPath(db, uid)), {
+  };
+  const movement = {
     productId: product.id,
     productName: product.name,
     kind: action.kind,
@@ -745,7 +746,14 @@ function writeStockChange(
     ...moneyForChange(product, action.kind, action.amount),
     ...madeBy(actor),
     createdAt: serverTimestamp(),
-  });
+  };
+  if ("commit" in batch) {
+    batch.update(productRef, update);
+    batch.set(movementRef, movement);
+  } else {
+    batch.update(productRef, update);
+    batch.set(movementRef, movement);
+  }
 }
 
 export async function recordStockChanges(
@@ -755,26 +763,90 @@ export async function recordStockChanges(
   credit?: { customer: Pick<Customer, "id" | "name">; amount: number },
   actor?: string,
 ) {
-  const planned = changes.map((change) => ({
-    ...change,
-    next: nextQuantity(change),
-    note: noteFor(change),
-  }));
   if (credit) {
     // Two writes per product plus two for the customer must fit one atomic batch.
-    if (planned.length > 199)
-      throw new Error("A credit sale can contain at most 199 products.");
+    if (changes.length > 100)
+      throw new Error("A credit sale can contain at most 100 products.");
+  }
+  if (navigator.onLine === false) {
+    if (
+      changes.some(
+        ({ product, action }) =>
+          action.kind === "correction" ||
+          (action.clampAtZero && action.amount > product.quantity) ||
+          (action.kind === "restock" && !!product.onOrder),
+      )
+    )
+      throw new Error(
+        "Connect to the internet to count stock, receive an order, or sell beyond recorded stock.",
+      );
+    const planned = changes.map((change) => ({
+      ...change,
+      next: nextQuantity(change),
+      note: noteFor(change),
+    }));
+    if (!credit)
+      return settleAll(
+        inBatches(db, planned, (batch, change) =>
+          writeStockChange(db, uid, batch, change, actor, true),
+        ),
+      );
     const batch = writeBatch(db);
     for (const change of planned)
-      writeStockChange(db, uid, batch, change, actor);
+      writeStockChange(db, uid, batch, change, actor, true);
     writeCredit(db, uid, batch, credit.customer, credit.amount, "Sale", actor);
     return settle(batch.commit());
   }
-  return settleAll(
-    inBatches(db, planned, (batch, change) =>
-      writeStockChange(db, uid, batch, change, actor),
-    ),
-  );
+  for (let start = 0; start < changes.length; start += 100) {
+    const group = changes.slice(start, start + 100);
+    await runTransaction(db, async (transaction) => {
+      // Firestore requires every read before the first write.
+      const snapshots = await Promise.all(
+        group.map(({ product }) =>
+          transaction.get(doc(db, "users", uid, "products", product.id)),
+        ),
+      );
+      const planned = group.map((change, index) => {
+        const snapshot = snapshots[index];
+        if (!snapshot.exists())
+          throw new Error(`${change.product.name} no longer exists.`);
+        const product = { id: snapshot.id, ...snapshot.data() } as Product;
+        if (
+          change.action.kind === "correction" &&
+          product.quantity !== change.product.quantity
+        )
+          throw new Error(
+            `${product.name} changed while you were counting. Review the count and try again.`,
+          );
+        if (
+          change.action.kind === "sale" &&
+          product.sellPrice !== change.product.sellPrice
+        )
+          throw new Error(
+            `${product.name} price changed. Review the sale and try again.`,
+          );
+        const current = { product, action: change.action };
+        return {
+          ...current,
+          next: nextQuantity(current),
+          note: noteFor(current),
+        };
+      });
+      for (const change of planned)
+        writeStockChange(db, uid, transaction, change, actor);
+      if (credit)
+        writeCredit(
+          db,
+          uid,
+          transaction,
+          credit.customer,
+          credit.amount,
+          "Sale",
+          actor,
+        );
+    });
+  }
+  return "saved";
 }
 
 export async function adjustStock(
@@ -794,32 +866,58 @@ export async function undoMovement(
   movement: Movement,
   actor?: string,
 ) {
-  const product = await readProduct(db, uid, movement.productId);
-  const next = roundQuantity(product.quantity - movement.change);
-  if (next < 0)
-    throw new Error(
-      `This would take ${product.name} below zero. Record a stock count instead.`,
-    );
-  const batch = writeBatch(db);
-  batch.update(doc(db, "users", uid, "products", product.id), {
-    quantity: isLoose(product) ? next : increment(0 - movement.change),
-    updatedAt: serverTimestamp(),
+  const productRef = doc(db, "users", uid, "products", movement.productId);
+  const undoRef = doc(movementsPath(db, uid), `undo-${movement.id}`);
+  const plan = (product: Product) => {
+    const next = roundQuantity(product.quantity - movement.change);
+    if (next < 0)
+      throw new Error(
+        `This would take ${product.name} below zero. Record a stock count instead.`,
+      );
+    return {
+      next,
+      entry: {
+        productId: product.id,
+        productName: product.name,
+        kind: "undo",
+        change: 0 - movement.change,
+        quantityBefore: product.quantity,
+        quantityAfter: next,
+        note: movementLabels[movement.kind],
+        undoes: movement.id,
+        ...madeBy(actor),
+        ...(movement.revenue ? { revenue: 0 - movement.revenue } : {}),
+        ...(movement.profit ? { profit: 0 - movement.profit } : {}),
+        createdAt: serverTimestamp(),
+      },
+    };
+  };
+  if (navigator.onLine === false) {
+    const product = await readProduct(db, uid, movement.productId);
+    const { entry } = plan(product);
+    const batch = writeBatch(db);
+    batch.update(productRef, {
+      quantity: increment(0 - movement.change),
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(undoRef, entry);
+    return settle(batch.commit());
+  }
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(productRef);
+    const previousUndo = await transaction.get(undoRef);
+    if (!snapshot.exists()) throw new Error("This product no longer exists.");
+    if (previousUndo.exists())
+      throw new Error("This change was already undone.");
+    const product = { id: snapshot.id, ...snapshot.data() } as Product;
+    const { next, entry } = plan(product);
+    transaction.update(productRef, {
+      quantity: next,
+      updatedAt: serverTimestamp(),
+    });
+    transaction.set(undoRef, entry);
   });
-  batch.set(doc(movementsPath(db, uid), `undo-${movement.id}`), {
-    productId: product.id,
-    productName: product.name,
-    kind: "undo",
-    change: 0 - movement.change,
-    quantityBefore: product.quantity,
-    quantityAfter: next,
-    note: movementLabels[movement.kind],
-    undoes: movement.id,
-    ...madeBy(actor),
-    ...(movement.revenue ? { revenue: 0 - movement.revenue } : {}),
-    ...(movement.profit ? { profit: 0 - movement.profit } : {}),
-    createdAt: serverTimestamp(),
-  });
-  return settle(batch.commit());
+  return "saved";
 }
 
 export function markOrdered(

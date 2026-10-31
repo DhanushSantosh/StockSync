@@ -5,8 +5,8 @@ A real-time inventory app for a single shopkeeper. It helps answer three daily q
 ## What it does
 
 - Add and edit products with SKU, category, supplier, low-stock alert level, and restock target, or import them from a CSV file.
-- Record receipts, sales, damaged/lost units, and physical stock counts. Record customer returns, and sales larger than the recorded count, which take stock to zero and note the real amount. Record a multi-item sale at once, or count the shelves at the end of the day and record what is missing as sold. Each write batch keeps the quantity and movement record together, and Security Rules reject negative stock.
-- Keep working offline. Changes are saved on the device and sync on reconnect, and the app can be installed on a phone.
+- Record receipts, sales, damaged/lost units, and physical stock counts. Record customer returns, and sales larger than the recorded count, which take stock to zero and note the real amount. Record a multi-item sale at once, or count the shelves at the end of the day and record what is missing as sold. Connected stock changes use Firestore transactions to read the current quantity and save the quantity and movement together. Security Rules reject negative stock.
+- Queue relative stock changes while offline and sync them on reconnect; the app can be installed on a phone. Physical counts, deliveries against an open order, and sales beyond the recorded count need a connection so they cannot overwrite newer stock.
 - Show a live reorder list with suggested quantities, supplier details, copyable text, and CSV download. Mark orders as placed and received, so stock already on the way is not ordered twice.
 - Sell loose goods by kilogram or litre, receive stock by the carton, and see products nearing their expiry date.
 - Find products by SKU or barcode, with a USB scanner or the phone camera.
@@ -20,7 +20,7 @@ A real-time inventory app for a single shopkeeper. It helps answer three daily q
 
 ## What is stored in Firebase
 
-Firebase Authentication stores account credentials. Cloud Firestore stores product documents at `users/{uid}/products/{productId}` and time-stamped movement documents at `users/{uid}/movements/{movementId}`. Firestore Security Rules restrict both collections to their account. Standard Firebase Hosting can serve the built web app.
+Firebase Authentication stores account credentials. Cloud Firestore stores products at `users/{uid}/products/{productId}`, time-stamped movements at `users/{uid}/movements/{movementId}`, customer balances and credit entries, shop profiles, and staff membership records. Firestore Security Rules restrict access to the owner and authorized staff. Firebase Hosting serves the built web app.
 
 Movement records are write-once through the client rules and remain after a product is deleted. They record actions made in this app; they are not a tamper-proof audit log against a user who controls their own Firebase client. Changes made before this feature was added cannot be reconstructed. The History screen loads 50 movements at a time and exports the full history for the current filters. A change can be undone once, which records a reversing movement rather than editing the original. The Overview chart reads the last 14 days of movements, up to 2,000.
 
@@ -76,8 +76,12 @@ Firebase Hosting serves the `dist` folder and rewrites routes to `index.html`. B
 
 ## Demo
 
-Register an account, add a product with a restock target, and open StockSync in a second browser window with the same account. Record a sale in one window; the other window, the Overview, Products, Reorder, and History screens update automatically. Try reducing more units than available to see the transaction reject a negative quantity. Sign in with another account to confirm that inventories are separate.
+Register an account, add a product with a restock target, and open StockSync in a second browser window with the same account. Record a sale in one window; the other window, the Overview, Products, Reorder, and History screens update automatically. A normal stock deduction cannot take stock below zero; the explicit oversell option records the full sale and leaves stock at zero. Sign in with another account to confirm that inventories are separate.
 
 ## Scope
 
-One account owns one inventory, and staff join it by invite code. Product photos, card payments, and forecasting are outside this mini-project. Expiry is one date per product rather than per batch. Offline changes are timestamped when they sync, not when they were made, and simultaneous changes from two devices keep the correct total but can show approximate before and after quantities in History. Cloud Storage and Cloud Functions require billing on the current Firebase Spark plan, so this app does not depend on them.
+One account owns one inventory, and staff join it by invite code. Product photos, card payments, and forecasting are outside this mini-project. Expiry is one date per product rather than per batch. Connected stock changes read the latest quantity in a transaction. Offline queued changes use relative increments; their History before/after values may be approximate if another device changes stock before they sync. Offline changes are timestamped when they sync, not when they were made. This app does not depend on Cloud Storage or Cloud Functions.
+
+## Project submission
+
+The [project report](docs/project-report.md) and its [PDF](output/pdf/StockSync-Project-Report.pdf) explain the problem, architecture, logic, security, tests, and limitations. The [demo and viva guide](docs/demo-viva.md) gives a repeatable presentation flow and likely questions.
