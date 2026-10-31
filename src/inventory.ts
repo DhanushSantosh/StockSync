@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocFromCache,
   getDocs,
+  getDocsFromServer,
   increment,
   limit,
   onSnapshot,
@@ -881,11 +882,15 @@ export function receiveOrder(db: Firestore, uid: string, products: Product[]) {
 
 const inviteAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-export async function createInvite(db: Firestore, uid: string) {
+async function cancelInvites(db: Firestore, uid: string) {
   const old = await getDocs(
     query(collection(db, "shopInvites"), where("owner", "==", uid)),
   );
   await Promise.all(old.docs.map((item) => deleteDoc(item.ref)));
+}
+
+export async function createInvite(db: Firestore, uid: string) {
+  await cancelInvites(db, uid);
   const code = [...crypto.getRandomValues(new Uint8Array(8))]
     .map((value) => inviteAlphabet[value % inviteAlphabet.length])
     .join("");
@@ -952,8 +957,15 @@ export function subscribeToMembers(
   );
 }
 
-export const removeMember = (db: Firestore, owner: string, member: string) =>
-  deleteDoc(doc(db, "users", owner, "members", member));
+// A removed person could otherwise walk back in with the same code.
+export async function removeMember(
+  db: Firestore,
+  owner: string,
+  member: string,
+) {
+  await cancelInvites(db, owner);
+  await deleteDoc(doc(db, "users", owner, "members", member));
+}
 
 export type Customer = {
   id: string;
@@ -1054,4 +1066,35 @@ export function subscribeToCreditEntries(
         ),
       ),
   );
+}
+
+const shopCollections = [
+  "products",
+  "movements",
+  "customers",
+  "creditEntries",
+  "members",
+];
+
+// Reads from the server so nothing is missed by a partial offline cache. If it
+// stops partway, running it again finishes the job.
+export async function deleteAccountData(
+  db: Firestore,
+  uid: string,
+  employer: string | null,
+) {
+  if (employer) await leaveShop(db, uid, employer);
+  await cancelInvites(db, uid);
+  const closing = doc(db, "users", uid, "closing", "request");
+  await setDoc(closing, {});
+  for (const name of shopCollections) {
+    const records = await getDocsFromServer(collection(db, "users", uid, name));
+    for (let start = 0; start < records.docs.length; start += 400) {
+      const batch = writeBatch(db);
+      for (const item of records.docs.slice(start, start + 400))
+        batch.delete(item.ref);
+      await batch.commit();
+    }
+  }
+  await deleteDoc(closing);
 }

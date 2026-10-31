@@ -10,7 +10,11 @@ import {
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  // Safari blocks the sign-in redirect when it crosses to another domain, so
+  // the hosted app uses its own address for Firebase's sign-in handler.
+  authDomain: location.hostname.endsWith(".web.app")
+    ? location.hostname
+    : import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };

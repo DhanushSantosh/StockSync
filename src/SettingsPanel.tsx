@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { signOut } from "firebase/auth";
+import { DeleteAccount } from "./DeleteAccount";
 import { errorText } from "./display";
+import { signOutOfDevice } from "./session";
 import { auth, db } from "./firebase";
 import {
   createInvite,
@@ -85,6 +86,7 @@ export function SettingsPanel({
                   onClick={() =>
                     run(async () => {
                       if (db) await removeMember(db, shop, member.id);
+                      setInvite("");
                       onNotice("Staff member removed.");
                     })
                   }
@@ -167,9 +169,10 @@ export function SettingsPanel({
         </select>
       </label>
 
-      <button className="btn-soft w-full" onClick={() => auth && signOut(auth)}>
+      <button className="btn-soft w-full" onClick={() => run(signOutOfDevice)}>
         {t("Sign out")}
       </button>
+      <DeleteAccount isOwner={isOwner} />
     </div>
   );
 }

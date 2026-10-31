@@ -2,7 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedInAs(uid) {
-      return request.auth != null && request.auth.uid == uid;
+      return verified() && request.auth.uid == uid;
+    }
+
+    // Stops anyone registering with an address they don't own.
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
     }
 
     function validProduct(data) {
@@ -50,7 +55,7 @@ service cloud.firestore {
     }
 
     function isMember(uid) {
-      return request.auth != null
+      return verified()
         && exists(/databases/$(database)/documents/users/$(uid)/members/$(request.auth.uid));
     }
 
@@ -81,12 +86,12 @@ service cloud.firestore {
     // Codes are long enough to be unguessable, so anyone signed in may look one
     // up, but only its owner can list or remove them.
     match /shopInvites/{code} {
-      allow get: if request.auth != null;
-      allow list: if request.auth != null && resource.data.owner == request.auth.uid;
-      allow create: if request.auth != null
+      allow get: if verified();
+      allow list: if verified() && resource.data.owner == request.auth.uid;
+      allow create: if verified()
         && request.resource.data.keys().hasOnly(['owner'])
         && request.resource.data.owner == request.auth.uid;
-      allow delete: if request.auth != null && resource.data.owner == request.auth.uid;
+      allow delete: if verified() && resource.data.owner == request.auth.uid;
     }
 
     match /memberships/{memberId} {
@@ -101,8 +106,18 @@ service cloud.firestore {
       allow delete: if signedInAs(uid) || signedInAs(memberId);
       allow create: if signedInAs(memberId)
         && request.resource.data.keys().hasOnly(['email', 'code'])
-        && request.resource.data.email is string
+        && request.resource.data.email == request.auth.token.email
         && get(/databases/$(database)/documents/shopInvites/$(request.resource.data.code)).data.owner == uid;
+    }
+
+    // History stays permanent until its owner chooses to close the account.
+    function closing(uid) {
+      return signedInAs(uid)
+        && exists(/databases/$(database)/documents/users/$(uid)/closing/request);
+    }
+
+    match /users/{uid}/closing/{request} {
+      allow read, create, delete: if signedInAs(uid);
     }
 
     match /users/{uid}/customers/{customerId} {
@@ -113,7 +128,9 @@ service cloud.firestore {
 
     match /users/{uid}/creditEntries/{entryId} {
       allow read: if inShop(uid);
-      allow create: if inShop(uid) && validCreditEntry(request.resource.data);
+      allow delete: if closing(uid);
+      allow create: if inShop(uid) && validCreditEntry(request.resource.data)
+        && (signedInAs(uid) || request.resource.data.by == request.auth.token.email);
     }
 
     match /users/{uid}/products/{productId} {
@@ -132,8 +149,10 @@ service cloud.firestore {
 
     match /users/{uid}/movements/{movementId} {
       allow read: if inShop(uid);
+      allow delete: if closing(uid);
       allow create: if inShop(uid) && validMovement(request.resource.data)
         && validUndo(request.resource.data, movementId)
+        && (signedInAs(uid) || request.resource.data.by == request.auth.token.email)
         && request.resource.data.createdAt == request.time;
     }
   }

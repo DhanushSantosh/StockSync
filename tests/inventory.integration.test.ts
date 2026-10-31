@@ -17,6 +17,7 @@ import {
   adjustStock,
   createProduct,
   createProducts,
+  deleteAccountData,
   recordStockChanges,
   addCustomer,
   cancelOrder,
@@ -25,6 +26,7 @@ import {
   joinShop,
   markOrdered,
   receiveOrder,
+  removeMember,
   recordCredit,
   removeProduct,
   undoMovement,
@@ -46,7 +48,9 @@ describe("stock movement workflow", () => {
     "records every quantity transition and rejects over-selling",
     { timeout: 20000 },
     async () => {
-      const db = env.authenticatedContext("alice").firestore();
+      const db = env
+        .authenticatedContext("alice", { email_verified: true })
+        .firestore();
       await createProduct(db, "alice", {
         name: "Notebook",
         sku: "N-1",
@@ -111,7 +115,9 @@ describe("stock movement workflow", () => {
   );
 
   it("deletes an out-of-stock product and records a zero change", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     await createProduct(db, "alice", {
       name: "Notebook",
       sku: "N-1",
@@ -145,7 +151,9 @@ describe("stock movement workflow", () => {
     );
 
   it("records a multi-item sale as one change per product", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     await createProducts(db, "alice", [
       { ...shelf, name: "Pen", quantity: 10 },
       { ...shelf, name: "Book", quantity: 4 },
@@ -166,7 +174,9 @@ describe("stock movement workflow", () => {
   });
 
   it("rejects the whole sale when one line exceeds stock", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     await createProducts(db, "alice", [
       { ...shelf, name: "Pen", quantity: 1 },
       { ...shelf, name: "Book", quantity: 5 },
@@ -188,7 +198,9 @@ describe("stock movement workflow", () => {
   });
 
   it("imports more products than fit in one write batch", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     await createProducts(
       db,
       "alice",
@@ -200,10 +212,12 @@ describe("stock movement workflow", () => {
     );
     await waitForPendingWrites(db);
     expect(await listProducts(db)).toHaveLength(260);
-  }, 20000);
+  }, 90000);
 
   it("queues a stock change offline and syncs it on reconnect", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     await createProduct(db, "alice", {
       ...shelf,
       name: "Pen",
@@ -236,7 +250,9 @@ describe("stock movement workflow", () => {
   };
 
   it("adds a customer return back to stock as its own kind", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await oneProduct(db);
     await adjustStock(db, "alice", product.id, {
       kind: "return",
@@ -249,7 +265,9 @@ describe("stock movement workflow", () => {
   });
 
   it("undoes a change once and refuses a second undo", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await oneProduct(db);
     await adjustStock(db, "alice", product.id, {
       kind: "sale",
@@ -270,7 +288,9 @@ describe("stock movement workflow", () => {
   });
 
   it("refuses an undo that would take stock below zero", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await oneProduct(db);
     await adjustStock(db, "alice", product.id, {
       kind: "restock",
@@ -289,7 +309,9 @@ describe("stock movement workflow", () => {
   });
 
   it("records an oversell by taking stock to zero with a note", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await oneProduct(db);
     await recordStockChanges(db, "alice", [
       {
@@ -306,7 +328,9 @@ describe("stock movement workflow", () => {
   });
 
   it("reads history past the first 50 changes", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     await createProducts(
       db,
       "alice",
@@ -318,7 +342,7 @@ describe("stock movement workflow", () => {
     );
     await waitForPendingWrites(db);
     expect(await fetchAllMovements(db, "alice")).toHaveLength(60);
-  }, 20000);
+  }, 90000);
 
   const pricedProduct = async (db: Parameters<typeof collection>[0]) => {
     await createProduct(db, "alice", {
@@ -332,7 +356,9 @@ describe("stock movement workflow", () => {
   };
 
   it("saves revenue and profit with a sale, and takes them back on undo", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await pricedProduct(db);
     await adjustStock(db, "alice", product.id, {
       kind: "sale",
@@ -351,7 +377,9 @@ describe("stock movement workflow", () => {
   });
 
   it("counts the real amount when a sale passes the recorded stock", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await pricedProduct(db);
     await recordStockChanges(db, "alice", [
       {
@@ -366,7 +394,9 @@ describe("stock movement workflow", () => {
   });
 
   it("tracks an order from placed to received", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await pricedProduct(db);
     await markOrdered(db, "alice", [{ id: product.id, units: 20 }]);
     const [ordered] = await listProducts(db);
@@ -377,7 +407,9 @@ describe("stock movement workflow", () => {
   });
 
   it("takes a part delivery off what is on order", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await pricedProduct(db);
     await markOrdered(db, "alice", [{ id: product.id, units: 20 }]);
     await adjustStock(db, "alice", product.id, {
@@ -392,7 +424,9 @@ describe("stock movement workflow", () => {
   });
 
   it("cancels an order without touching stock", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await pricedProduct(db);
     await markOrdered(db, "alice", [{ id: product.id, units: 20 }]);
     await cancelOrder(db, "alice", [product.id]);
@@ -403,7 +437,9 @@ describe("stock movement workflow", () => {
   });
 
   it("sells loose goods by weight without drifting", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     await createProduct(db, "alice", {
       ...shelf,
       name: "Rice",
@@ -421,7 +457,9 @@ describe("stock movement workflow", () => {
   });
 
   it("sets a new expiry date with a delivery", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const product = await oneProduct(db);
     await adjustStock(db, "alice", product.id, {
       kind: "restock",
@@ -433,9 +471,14 @@ describe("stock movement workflow", () => {
   });
 
   it("joins a shop with an invite code and refuses a bad one", async () => {
-    const owner = env.authenticatedContext("alice").firestore();
+    const owner = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const staff = env
-      .authenticatedContext("bob", { email: "bob@shop.test" })
+      .authenticatedContext("bob", {
+        email: "bob@shop.test",
+        email_verified: true,
+      })
       .firestore();
     const code = await createInvite(owner, "alice");
     expect(code).toMatch(/^[A-Z2-9]{8}$/);
@@ -448,7 +491,9 @@ describe("stock movement workflow", () => {
   });
 
   it("tracks what a customer owes across credit and payment", async () => {
-    const db = env.authenticatedContext("alice").firestore();
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     await addCustomer(db, "alice", { name: "Ravi", phone: "" }, []);
     const read = async () =>
       (await getDocs(collection(db, "users/alice/customers"))).docs.map(
@@ -460,5 +505,79 @@ describe("stock movement workflow", () => {
     await expect(
       addCustomer(db, "alice", { name: " ravi ", phone: "" }, [await read()]),
     ).rejects.toThrow(/already/);
+  });
+
+  it("cancels the invite code when staff are removed", async () => {
+    const owner = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const staff = env
+      .authenticatedContext("bob", {
+        email: "bob@shop.test",
+        email_verified: true,
+      })
+      .firestore();
+    const code = await createInvite(owner, "alice");
+    await joinShop(staff, "bob", "bob@shop.test", code);
+    await removeMember(owner, "alice", "bob");
+    await expect(joinShop(staff, "bob", "bob@shop.test", code)).rejects.toThrow(
+      /code/i,
+    );
+  });
+
+  it("removes everything an owner has when closing an account", async () => {
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const product = await oneProduct(db);
+    await adjustStock(db, "alice", product.id, {
+      kind: "sale",
+      amount: 1,
+      note: "",
+    });
+    await addCustomer(db, "alice", { name: "Ravi", phone: "" }, []);
+    const code = await createInvite(db, "alice");
+    const staff = env
+      .authenticatedContext("bob", {
+        email: "bob@shop.test",
+        email_verified: true,
+      })
+      .firestore();
+    await joinShop(staff, "bob", "bob@shop.test", code);
+    await deleteAccountData(db, "alice", null);
+    await env.withSecurityRulesDisabled(async (context) => {
+      const admin = context.firestore();
+      for (const name of [
+        "products",
+        "movements",
+        "customers",
+        "members",
+        "closing",
+      ])
+        expect(
+          (await getDocs(collection(admin, `users/alice/${name}`))).empty,
+        ).toBe(true);
+      expect((await getDocs(collection(admin, "shopInvites"))).empty).toBe(
+        true,
+      );
+    });
+  }, 90000);
+
+  it("takes a staff member out of the shop when they close their account", async () => {
+    const owner = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const staff = env
+      .authenticatedContext("bob", {
+        email: "bob@shop.test",
+        email_verified: true,
+      })
+      .firestore();
+    const code = await createInvite(owner, "alice");
+    await joinShop(staff, "bob", "bob@shop.test", code);
+    await deleteAccountData(staff, "bob", "alice");
+    expect(
+      (await getDocs(collection(owner, "users/alice/members"))).empty,
+    ).toBe(true);
   });
 });

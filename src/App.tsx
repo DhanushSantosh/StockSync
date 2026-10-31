@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   ClipboardList,
@@ -26,15 +26,32 @@ import {
   type Movement,
   type Product,
 } from "./inventory";
-import { AuthScreen } from "./AuthScreen";
-import { HistoryPage } from "./HistoryPage";
-import { OverviewPage } from "./OverviewPage";
-import { ProductsPage } from "./ProductsPage";
-import { RecordPage } from "./RecordPage";
-import { ReorderPage } from "./ReorderPage";
-import { Sheet, type Panel } from "./Sheet";
+import type { Panel } from "./Sheet";
 import { Alert } from "./ui";
+import { VerifyEmail } from "./VerifyEmail";
 import { t } from "./i18n";
+
+const AuthScreen = lazy(() =>
+  import("./AuthScreen").then((file) => ({ default: file.AuthScreen })),
+);
+const HistoryPage = lazy(() =>
+  import("./HistoryPage").then((file) => ({ default: file.HistoryPage })),
+);
+const OverviewPage = lazy(() =>
+  import("./OverviewPage").then((file) => ({ default: file.OverviewPage })),
+);
+const ProductsPage = lazy(() =>
+  import("./ProductsPage").then((file) => ({ default: file.ProductsPage })),
+);
+const RecordPage = lazy(() =>
+  import("./RecordPage").then((file) => ({ default: file.RecordPage })),
+);
+const ReorderPage = lazy(() =>
+  import("./ReorderPage").then((file) => ({ default: file.ReorderPage })),
+);
+const Sheet = lazy(() =>
+  import("./Sheet").then((file) => ({ default: file.Sheet })),
+);
 
 const pages = ["Overview", "Record", "Products", "Reorder", "History"] as const;
 type Page = (typeof pages)[number];
@@ -246,53 +263,55 @@ function AppShell({ user }: { user: User }) {
             <div className="skeleton h-[26rem]" />
           </div>
         ) : (
-          <div key={page} className="page">
-            {page !== "Overview" && (
-              <h1 className="mb-gap text-heading font-semibold">{t(page)}</h1>
-            )}
-            {page === "Overview" ? (
-              <OverviewPage
-                products={products}
-                movements={movements}
-                recentMovements={recentMovements}
-                customers={customers}
-                canManage={canManage}
-                activityError={activityError}
-                onSelect={select}
-                onAdd={add}
-                onImport={importProducts}
-                onNavigate={setPage}
-              />
-            ) : page === "Products" ? (
-              <ProductsPage
-                products={products}
-                onSelect={select}
-                onAdd={add}
-                onImport={importProducts}
-                canManage={canManage}
-              />
-            ) : page === "Record" ? (
-              <RecordPage
-                products={products}
-                customers={customers}
-                onNotice={setNotice}
-              />
-            ) : page === "Reorder" ? (
-              <ReorderPage
-                products={products}
-                onSelect={select}
-                onNotice={setNotice}
-              />
-            ) : (
-              <HistoryPage
-                movements={movements}
-                error={activityError}
-                hasMore={movements.length >= historySize}
-                onLoadMore={() => setHistorySize(historySize + 50)}
-                onNotice={setNotice}
-              />
-            )}
-          </div>
+          <Suspense fallback={<div className="skeleton h-[26rem]" />}>
+            <div key={page} className="page">
+              {page !== "Overview" && (
+                <h1 className="mb-gap text-heading font-semibold">{t(page)}</h1>
+              )}
+              {page === "Overview" ? (
+                <OverviewPage
+                  products={products}
+                  movements={movements}
+                  recentMovements={recentMovements}
+                  customers={customers}
+                  canManage={canManage}
+                  activityError={activityError}
+                  onSelect={select}
+                  onAdd={add}
+                  onImport={importProducts}
+                  onNavigate={setPage}
+                />
+              ) : page === "Products" ? (
+                <ProductsPage
+                  products={products}
+                  onSelect={select}
+                  onAdd={add}
+                  onImport={importProducts}
+                  canManage={canManage}
+                />
+              ) : page === "Record" ? (
+                <RecordPage
+                  products={products}
+                  customers={customers}
+                  onNotice={setNotice}
+                />
+              ) : page === "Reorder" ? (
+                <ReorderPage
+                  products={products}
+                  onSelect={select}
+                  onNotice={setNotice}
+                />
+              ) : (
+                <HistoryPage
+                  movements={movements}
+                  error={activityError}
+                  hasMore={movements.length >= historySize}
+                  onLoadMore={() => setHistorySize(historySize + 50)}
+                  onNotice={setNotice}
+                />
+              )}
+            </div>
+          </Suspense>
         )}
       </main>
       <nav className="tabbar" aria-label="Main">
@@ -326,15 +345,17 @@ function AppShell({ user }: { user: User }) {
         })}
       </nav>
       {panel && (
-        <Sheet
-          key={"id" in panel ? panel.id : panel.kind}
-          panel={panel}
-          products={products}
-          canManage={canManage}
-          onPanel={setPanel}
-          onClose={() => setPanel(null)}
-          onNotice={setNotice}
-        />
+        <Suspense fallback={null}>
+          <Sheet
+            key={"id" in panel ? panel.id : panel.kind}
+            panel={panel}
+            products={products}
+            canManage={canManage}
+            onPanel={setPanel}
+            onClose={() => setPanel(null)}
+            onNotice={setNotice}
+          />
+        </Suspense>
       )}
       <div role="status" aria-live="polite">
         {notice && (
@@ -350,6 +371,7 @@ function AppShell({ user }: { user: User }) {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(true);
+  const [confirmed, setConfirmed] = useState(0);
   useEffect(() => {
     if (!auth) return;
     return onAuthStateChanged(
@@ -376,5 +398,16 @@ export default function App() {
       </div>
     );
   if (checking) return <div className="min-h-dvh bg-ink" />;
-  return user ? <AppShell user={user} /> : <AuthScreen />;
+  if (!user)
+    return (
+      <Suspense fallback={<div className="min-h-dvh bg-ink" />}>
+        <AuthScreen />
+      </Suspense>
+    );
+  if (!user.emailVerified)
+    return (
+      <VerifyEmail user={user} onVerified={() => setConfirmed(confirmed + 1)} />
+    );
+  // Keyed so nothing from one account carries into the next.
+  return <AppShell key={user.uid} user={user} />;
 }

@@ -69,7 +69,12 @@ export const savedMessage = (result: SaveResult, message: string) =>
     : message;
 
 export function errorText(cause: unknown) {
-  if ((cause as { code?: string }).code === "permission-denied")
+  const code = (cause as { code?: string }).code;
+  if (code === "auth/invalid-credential" || code === "auth/wrong-password")
+    return "That password is incorrect.";
+  if (code === "auth/popup-closed-by-user")
+    return "Sign-in was cancelled, so nothing was deleted.";
+  if (code === "permission-denied")
     return "This change was rejected. Check the stock on hand and try again.";
   return cause instanceof Error ? cause.message : "Saving failed. Try again.";
 }

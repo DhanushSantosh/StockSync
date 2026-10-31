@@ -47,8 +47,12 @@ afterAll(async () => env?.cleanup());
 
 describe("Firestore inventory rules", () => {
   it("requires authentication and isolates each user", async () => {
-    const alice = env.authenticatedContext("alice").firestore();
-    const bob = env.authenticatedContext("bob").firestore();
+    const alice = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const bob = env
+      .authenticatedContext("bob", { email_verified: true })
+      .firestore();
     const guest = env.unauthenticatedContext().firestore();
     await assertSucceeds(
       setDoc(doc(alice, "users/alice/products/one"), valid()),
@@ -66,7 +70,9 @@ describe("Firestore inventory rules", () => {
   });
 
   it("rejects invalid products and negative stock", async () => {
-    const alice = env.authenticatedContext("alice").firestore();
+    const alice = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const ref = doc(alice, "users/alice/products/one");
     await assertFails(setDoc(ref, { ...valid(), quantity: -1 }));
     await assertFails(setDoc(ref, { ...valid(), unexpected: true }));
@@ -81,8 +87,12 @@ describe("Firestore inventory rules", () => {
   });
 
   it("accepts reorder fields and protects immutable movement history", async () => {
-    const alice = env.authenticatedContext("alice").firestore();
-    const bob = env.authenticatedContext("bob").firestore();
+    const alice = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const bob = env
+      .authenticatedContext("bob", { email_verified: true })
+      .firestore();
     const guest = env.unauthenticatedContext().firestore();
     await assertSucceeds(
       setDoc(doc(alice, "users/alice/products/one"), {
@@ -116,7 +126,9 @@ describe("Firestore inventory rules", () => {
   });
 
   it("accepts returns and one undo per movement, nothing else", async () => {
-    const alice = env.authenticatedContext("alice").firestore();
+    const alice = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     await assertSucceeds(
       setDoc(doc(alice, "users/alice/movements/r1"), {
         ...movement(),
@@ -142,7 +154,9 @@ describe("Firestore inventory rules", () => {
   });
 
   it("keeps prices and order counts as whole nonnegative numbers", async () => {
-    const alice = env.authenticatedContext("alice").firestore();
+    const alice = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const ref = doc(alice, "users/alice/products/priced");
     await assertFails(setDoc(ref, { ...valid(), costPrice: -1 }));
     await assertFails(setDoc(ref, { ...valid(), sellPrice: 1.5 }));
@@ -166,7 +180,9 @@ describe("Firestore inventory rules", () => {
   });
 
   it("accepts weights, units, pack sizes and expiry dates", async () => {
-    const alice = env.authenticatedContext("alice").firestore();
+    const alice = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const ref = doc(alice, "users/alice/products/rice");
     await assertFails(setDoc(ref, { ...valid(), unit: "bags" }));
     await assertFails(setDoc(ref, { ...valid(), packSize: 0 }));
@@ -200,9 +216,12 @@ describe("Firestore inventory rules", () => {
 
   describe("shared shops", () => {
     const bobEmail = "bob@shop.test";
-    const owner = () => env.authenticatedContext("alice").firestore();
+    const owner = () =>
+      env.authenticatedContext("alice", { email_verified: true }).firestore();
     const staff = () =>
-      env.authenticatedContext("bob", { email: bobEmail }).firestore();
+      env
+        .authenticatedContext("bob", { email: bobEmail, email_verified: true })
+        .firestore();
     const join = async () => {
       await assertSucceeds(
         setDoc(doc(owner(), "shopInvites/CODE1234"), { owner: "alice" }),
@@ -268,7 +287,9 @@ describe("Firestore inventory rules", () => {
 
     it("keeps other people out of the invite list and members", async () => {
       await join();
-      const carol = env.authenticatedContext("carol").firestore();
+      const carol = env
+        .authenticatedContext("carol", { email_verified: true })
+        .firestore();
       await assertFails(getDoc(doc(carol, "users/alice/members/bob")));
       await assertFails(deleteDoc(doc(carol, "shopInvites/CODE1234")));
       await assertFails(
@@ -278,7 +299,9 @@ describe("Firestore inventory rules", () => {
   });
 
   it("keeps customer credit whole and its entries permanent", async () => {
-    const alice = env.authenticatedContext("alice").firestore();
+    const alice = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
     const customer = doc(alice, "users/alice/customers/c1");
     await assertFails(
       setDoc(customer, {
@@ -308,5 +331,65 @@ describe("Firestore inventory rules", () => {
     await assertSucceeds(setDoc(entry, record));
     await assertFails(updateDoc(entry, { amount: 1 }));
     await assertFails(deleteDoc(entry));
+  });
+
+  it("keeps unverified accounts out of everything", async () => {
+    const unverified = env
+      .authenticatedContext("mallory", { email: "owner@shop.test" })
+      .firestore();
+    await assertFails(
+      setDoc(doc(unverified, "users/mallory/products/one"), valid()),
+    );
+    await assertFails(getDoc(doc(unverified, "users/mallory/products/one")));
+    await assertFails(
+      setDoc(doc(unverified, "shopInvites/ABCD2345"), { owner: "mallory" }),
+    );
+  });
+
+  it("makes staff sign their changes with their real email", async () => {
+    const owner = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    await setDoc(doc(owner, "shopInvites/CODE1234"), { owner: "alice" });
+    const email = "bob@shop.test";
+    const bob = env
+      .authenticatedContext("bob", { email, email_verified: true })
+      .firestore();
+    await assertFails(
+      setDoc(doc(bob, "users/alice/members/bob"), {
+        email: "owner@shop.test",
+        code: "CODE1234",
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(bob, "users/alice/members/bob"), { email, code: "CODE1234" }),
+    );
+    await assertFails(
+      setDoc(doc(bob, "users/alice/movements/hidden"), movement()),
+    );
+    await assertSucceeds(
+      setDoc(doc(bob, "users/alice/movements/signed"), {
+        ...movement(),
+        by: email,
+      }),
+    );
+  });
+
+  it("only lets history go once its owner starts closing the account", async () => {
+    const alice = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const ref = doc(alice, "users/alice/movements/m1");
+    await assertSucceeds(setDoc(ref, movement()));
+    await assertFails(deleteDoc(ref));
+    const closing = doc(alice, "users/alice/closing/request");
+    const carol = env
+      .authenticatedContext("carol", { email_verified: true })
+      .firestore();
+    await assertFails(setDoc(doc(carol, "users/alice/closing/request"), {}));
+    await assertSucceeds(setDoc(closing, {}));
+    await assertFails(deleteDoc(doc(carol, "users/alice/movements/m1")));
+    await assertSucceeds(deleteDoc(ref));
+    await assertSucceeds(deleteDoc(closing));
   });
 });

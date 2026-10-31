@@ -13,6 +13,7 @@ A real-time inventory app for a single shopkeeper. It helps answer three daily q
 - Give staff their own login with an invite code. Staff record stock but cannot change products or prices, and History shows who made each change.
 - Track what customers owe, on a sale or by hand, and record their payments.
 - Use the app in English or Hindi.
+- Sign in with Google, or with email and a verified address. Security Rules keep unverified accounts out, and signing out clears the shop's data from the device. Settings can permanently delete an account and all of its shop data.
 - Track cost and selling prices in rupees for stock value, sales, and profit. Each sale keeps the amounts from when it happened.
 - Browse, search, filter, and export recent stock changes, including before/after quantities and optional notes.
 - See live stock totals, a 14-day chart, and stock alerts on multiple signed-in devices. Firebase Authentication also provides password-reset email.
@@ -31,7 +32,7 @@ React, TypeScript, Vite, Tailwind CSS, Firebase Authentication, Cloud Firestore,
 
 1. Create a project in the [Firebase Console](https://console.firebase.google.com/). The Spark plan is enough for this mini-project. Analytics is optional.
 2. In **Project overview**, choose the **Web** icon to register a web app. Copy the web app configuration from **Project settings → Your apps**.
-3. In **Authentication → Sign-in method**, enable **Email/Password**. For local development, add `localhost` under **Authentication → Settings → Authorized domains** if it is not listed.
+3. In **Authentication → Sign-in method**, enable **Email/Password** and **Google**. For the hosted app, add `https://YOUR_PROJECT.web.app/__/auth/handler` to the OAuth client's authorized redirect URIs in Google Cloud Console. For local development, add `localhost` under **Authentication → Settings → Authorized domains** if it is not listed.
 4. In **Firestore Database**, create the default database. Choose **production mode** and a suitable region. Its initial deny-all rules will be replaced by this repository's tested rules in step 7.
 5. Copy `.env.example` to `.env` and fill in `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, and `VITE_FIREBASE_APP_ID` from the web app configuration. Do not add quotation marks. `.env` is ignored by Git.
 6. Run `npm install` and `npm run dev`, then open the local URL shown by Vite.

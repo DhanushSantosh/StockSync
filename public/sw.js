@@ -1,29 +1,17 @@
 // Keeps the app shell available without a connection. Firestore has its own
 // offline cache, so only this site's files are handled here.
-const cacheName = "stocksync-v1";
+const cacheName = "stocksync-v2";
 
 async function cacheShell() {
   const cache = await caches.open(cacheName);
   const page = await fetch("/", { cache: "reload" });
-  const html = await page.clone().text();
   await cache.put("/", page);
-  const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map(
-    (match) => match[1],
-  );
-  const styles = assets.filter((asset) => asset.endsWith(".css"));
-  const css = await Promise.all(
-    styles.map((asset) => fetch(asset).then((file) => file.text())),
-  );
-  const fonts = css.flatMap((sheet) =>
-    [...sheet.matchAll(/\/assets\/[^)"']*-latin-[^)"']*\.woff2/g)].map(
-      (match) => match[0],
-    ),
-  );
+  // Screens load on demand, so all of them are stored for offline use.
+  const list = await fetch("/asset-list.json", { cache: "reload" });
   await cache.addAll([
     "/manifest.webmanifest",
     "/favicon.svg",
-    ...assets,
-    ...new Set(fonts),
+    ...(await list.json()),
   ]);
 }
 
@@ -71,7 +59,12 @@ async function storedFile(request) {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method !== "GET" || url.origin !== self.location.origin)
+  // /__/ is Firebase's own sign-in handler and must always reach the network.
+  if (
+    event.request.method !== "GET" ||
+    url.origin !== self.location.origin ||
+    url.pathname.startsWith("/__/")
+  )
     return;
   event.respondWith(
     event.request.mode === "navigate"
