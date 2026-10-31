@@ -7,8 +7,11 @@ import {
   duplicateProblem,
   expiringSoon,
   findByCode,
+  gettingStarted,
   formatQuantity,
   groupByDay,
+  sampleProducts,
+  shopKinds,
   inventorySummary,
   matchCategory,
   moneyForChange,
@@ -402,5 +405,61 @@ describe("findByCode", () => {
     expect(findByCode(stock, " 8901234567890 ")?.sku).toBe("8901234567890");
     expect(findByCode(stock, "890123")).toBeUndefined();
     expect(findByCode([{ ...product(1), sku: "" }], "")).toBeUndefined();
+  });
+});
+
+describe("gettingStarted", () => {
+  const done = (
+    stock: Parameters<typeof gettingStarted>[0],
+    moves: Parameters<typeof gettingStarted>[1],
+  ) => gettingStarted(stock, moves).map((step) => step.done);
+
+  it("starts with nothing done", () => {
+    expect(done([], [])).toEqual([false, false, false, false]);
+  });
+
+  it("does not count sample products as the shop's own", () => {
+    const stock = [{ ...product(1), sample: true, lowStockThreshold: 9 }];
+    expect(done(stock, [])).toEqual([false, false, false, false]);
+  });
+
+  it("ticks off real work", () => {
+    const stock = [{ ...product(1), lowStockThreshold: 9 }];
+    const moves = [
+      { kind: "sale" as const, note: "" },
+      { kind: "correction" as const, note: "End-of-day count" },
+    ];
+    expect(done(stock, moves)).toEqual([true, true, true, true]);
+  });
+
+  it("counts a count that recorded missing units as sold", () => {
+    const moves = [{ kind: "sale" as const, note: "End-of-day count" }];
+    expect(done([], moves)).toEqual([false, true, false, true]);
+  });
+
+  it("leaves alert levels open at the default", () => {
+    const stock = [{ ...product(1), lowStockThreshold: 5, targetStock: 0 }];
+    expect(done(stock, [])[2]).toBe(false);
+  });
+});
+
+describe("sampleProducts", () => {
+  it("gives every kind of shop valid products marked as samples", () => {
+    for (const kind of shopKinds) {
+      const items = sampleProducts(kind);
+      expect(items.length).toBeGreaterThan(3);
+      for (const item of items) {
+        expect(item.sample).toBe(true);
+        expect(validateProduct(item, true)).toBeNull();
+      }
+    }
+  });
+
+  it("includes something low, so Reorder has work to show", () => {
+    expect(
+      sampleProducts("Groceries").some(
+        (item) => (item.quantity ?? 0) <= item.lowStockThreshold,
+      ),
+    ).toBe(true);
   });
 });

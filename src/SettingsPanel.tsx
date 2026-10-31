@@ -8,6 +8,7 @@ import {
   joinShop,
   leaveShop,
   removeMember,
+  saveProfile,
   shopId,
   subscribeToMembers,
   type Member,
@@ -16,9 +17,13 @@ import { Alert } from "./ui";
 import { currentLanguage, setLanguage, t, type Language } from "./i18n";
 
 export function SettingsPanel({
+  shopName,
+  onTour,
   onDone,
   onNotice,
 }: {
+  shopName: string;
+  onTour: () => void;
   onDone: () => void;
   onNotice: (message: string) => void;
 }) {
@@ -28,6 +33,7 @@ export function SettingsPanel({
   const [members, setMembers] = useState<Member[]>([]);
   const [invite, setInvite] = useState("");
   const [code, setCode] = useState("");
+  const [name, setName] = useState(shopName);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
 
@@ -58,6 +64,15 @@ export function SettingsPanel({
     });
   }
 
+  function rename(event: FormEvent) {
+    event.preventDefault();
+    run(async () => {
+      if (!db || !user) return;
+      await saveProfile(db, user.uid, { name: name.trim() });
+      onNotice(t("Shop name saved."));
+    });
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -68,6 +83,22 @@ export function SettingsPanel({
 
       {isOwner ? (
         <>
+          <form onSubmit={rename}>
+            <label className="field-label">
+              {t("Shop name")}
+              <input
+                className="field"
+                maxLength={60}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
+            {name.trim() !== shopName && (
+              <button className="btn-soft mt-2 w-full" disabled={busy}>
+                {t("Save")}
+              </button>
+            )}
+          </form>
           <section>
             <h3 className="heading">{t("Staff")}</h3>
             <p className="hint mt-0.5">
@@ -169,6 +200,15 @@ export function SettingsPanel({
         </select>
       </label>
 
+      <button
+        className="btn-soft w-full"
+        onClick={() => {
+          onDone();
+          onTour();
+        }}
+      >
+        {t("Show the tour")}
+      </button>
       <button className="btn-soft w-full" onClick={() => run(signOutOfDevice)}>
         {t("Sign out")}
       </button>

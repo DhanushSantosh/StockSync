@@ -165,6 +165,89 @@ const hindi: Record<string, string> = {
   "Add your first product": "अपना पहला उत्पाद जोड़ें",
   "You're offline. Changes are saved on this device and sync when you're back.":
     "आप ऑफ़लाइन हैं। बदलाव इस डिवाइस पर सहेजे गए हैं और ऑनलाइन होने पर सिंक होंगे।",
+  Back: "वापस",
+  Step: "चरण",
+  "Welcome to StockSync": "StockSync में आपका स्वागत है",
+  "Know what's on your shelves, what to reorder, and what you earned today.":
+    "जानें कि शेल्फ़ पर क्या है, क्या मँगाना है और आज कितनी कमाई हुई।",
+  "I run a shop": "मेरी दुकान है",
+  "Set up your products and stock": "अपने उत्पाद और स्टॉक सेट करें",
+  "I work at a shop": "मैं दुकान पर काम करता/करती हूँ",
+  "Join with a code from the owner": "मालिक के कोड से जुड़ें",
+  "Invite code": "आमंत्रण कोड",
+  Continue: "आगे बढ़ें",
+  "Tell us about your shop": "अपनी दुकान के बारे में बताएँ",
+  "This appears in the app and on your staff's screens. You can change it later.":
+    "यह ऐप में और आपके कर्मचारियों की स्क्रीन पर दिखेगा। इसे बाद में बदल सकते हैं।",
+  "Shop name": "दुकान का नाम",
+  "What do you mostly sell?": "आप ज़्यादातर क्या बेचते हैं?",
+  Groceries: "किराना",
+  Stationery: "स्टेशनरी",
+  Medical: "दवाइयाँ",
+  Hardware: "हार्डवेयर",
+  Other: "अन्य",
+  "Add your first products": "अपने पहले उत्पाद जोड़ें",
+  "Start small. You can add the rest any time.":
+    "थोड़े से शुरू करें। बाकी कभी भी जोड़ सकते हैं।",
+  "Add a few by hand": "कुछ उत्पाद खुद जोड़ें",
+  "Name, stock and price. About a minute each.":
+    "नाम, स्टॉक और दाम। हर एक में लगभग एक मिनट।",
+  "Import a spreadsheet": "स्प्रेडशीट इम्पोर्ट करें",
+  "Best if you already have a product list.":
+    "अगर उत्पादों की सूची पहले से है तो यह सबसे अच्छा है।",
+  "Explore with sample products": "नमूना उत्पादों से आज़माएँ",
+  "Try it safely. Remove them in one tap.":
+    "बेझिझक आज़माएँ। एक टैप में हटा सकते हैं।",
+  Added: "जोड़े गए",
+  "Product name": "उत्पाद का नाम",
+  "In stock": "स्टॉक में",
+  "Selling price, ₹": "बिक्री मूल्य, ₹",
+  "Add another": "एक और जोड़ें",
+  "Skip for now": "अभी छोड़ें",
+  Skip: "छोड़ें",
+  "Anyone helping at the counter?": "काउंटर पर कोई मदद करता है?",
+  "Staff can record stock but can't change your products or prices.":
+    "कर्मचारी स्टॉक दर्ज कर सकते हैं, पर आपके उत्पाद या दाम नहीं बदल सकते।",
+  "Share this code": "यह कोड साझा करें",
+  "Copy code": "कोड कॉपी करें",
+  Copied: "कॉपी हो गया",
+  "Couldn't copy. Write the code down instead.": "कॉपी नहीं हुआ। कोड लिख लें।",
+  "They create an account, choose I work at a shop and enter it.":
+    "वे खाता बनाएँ, मैं दुकान पर काम करता/करती हूँ चुनें और कोड डालें।",
+  "You're set up": "सब तैयार है",
+  "Want a one-minute tour of the four things you'll use every day?":
+    "क्या आप रोज़ काम आने वाली चार चीज़ों का एक मिनट का परिचय देखना चाहेंगे?",
+  "Show me around": "मुझे दिखाएँ",
+  "Skip the tour": "परिचय छोड़ें",
+  Tour: "परिचय",
+  "Show the tour": "परिचय दिखाएँ",
+  Next: "आगे",
+  Done: "हो गया",
+  "Record a sale": "बिक्री दर्ज करें",
+  "Tap Record, then tap what the customer bought. Scan a barcode if the product has one.":
+    "दर्ज करें पर टैप करें, फिर ग्राहक ने जो खरीदा उस पर टैप करें। बारकोड हो तो स्कैन करें।",
+  "Count at closing": "बंद करते समय गिनती",
+  "Short on time? Under Record, use Count to enter what's on the shelf. Missing units count as sold.":
+    "समय कम है? दर्ज करें में गिनती से शेल्फ़ का स्टॉक डालें। कम निकली मात्रा बिकी मानी जाएगी।",
+  "See what to buy": "देखें क्या खरीदना है",
+  "Reorder lists what's running low by supplier, with how much to order.":
+    "फिर से मँगाएँ में सप्लायर के हिसाब से कम होता माल और मँगाने की मात्रा दिखती है।",
+  "Fix a mistake": "गलती सुधारें",
+  "Every change is in History. Tap one to undo it.":
+    "हर बदलाव इतिहास में है। वापस लेने के लिए उस पर टैप करें।",
+  "Getting started": "शुरुआत करें",
+  Hide: "छिपाएँ",
+  done: "पूरे",
+  "Add your products": "अपने उत्पाद जोड़ें",
+  "Record your first sale": "अपनी पहली बिक्री दर्ज करें",
+  "Set your alert levels": "अपने अलर्ट स्तर तय करें",
+  "Do one end-of-day count": "दिन के अंत की एक गिनती करें",
+  "You're exploring with sample products. Sales on them are practice.":
+    "आप नमूना उत्पादों से आज़मा रहे हैं। इन पर बिक्री सिर्फ़ अभ्यास है।",
+  "Remove sample products": "नमूना उत्पाद हटाएँ",
+  "Sample products removed.": "नमूना उत्पाद हटा दिए गए।",
+  "Shop name saved.": "दुकान का नाम सहेजा गया।",
+  Save: "सहेजें",
 };
 
 export type Language = "en" | "hi";

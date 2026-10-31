@@ -393,3 +393,82 @@ describe("Firestore inventory rules", () => {
     await assertSucceeds(deleteDoc(closing));
   });
 });
+
+describe("shop profile and sample products", () => {
+  const verified = (uid: string, email = `${uid}@shop.test`) =>
+    env.authenticatedContext(uid, { email, email_verified: true }).firestore();
+  const seed = (
+    work: Parameters<RulesTestEnvironment["withSecurityRulesDisabled"]>[0],
+  ) => env.withSecurityRulesDisabled(work);
+
+  it("lets the owner keep a profile staff can read", async () => {
+    const alice = verified("alice");
+    const ref = doc(alice, "users/alice/profile/shop");
+    await assertSucceeds(
+      setDoc(ref, { name: "Sri Lakshmi Stores", kind: "Groceries" }),
+    );
+    await assertSucceeds(
+      setDoc(ref, { setupDone: true, checklistHidden: true }, { merge: true }),
+    );
+    await assertFails(setDoc(ref, { role: "admin" }, { merge: true }));
+    await assertFails(setDoc(ref, { name: "x".repeat(61) }, { merge: true }));
+    await assertFails(setDoc(doc(alice, "users/alice/profile/other"), {}));
+
+    const bob = verified("bob");
+    await assertFails(getDoc(doc(bob, "users/alice/profile/shop")));
+    await assertFails(
+      setDoc(doc(bob, "users/alice/profile/shop"), { name: "Taken" }),
+    );
+    await seed(async (context) => {
+      await setDoc(doc(context.firestore(), "users/alice/members/bob"), {
+        email: "bob@shop.test",
+      });
+    });
+    await assertSucceeds(getDoc(doc(bob, "users/alice/profile/shop")));
+    await assertFails(
+      setDoc(doc(bob, "users/alice/profile/shop"), { name: "Taken" }),
+    );
+  });
+
+  it("deletes history only for products marked as samples", async () => {
+    await seed(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "users/alice/products/sample"), {
+        ...valid(),
+        sample: true,
+      });
+      await setDoc(doc(db, "users/alice/products/real"), valid());
+      await setDoc(doc(db, "users/alice/movements/a"), {
+        ...movement(),
+        productId: "sample",
+      });
+      await setDoc(doc(db, "users/alice/movements/b"), {
+        ...movement(),
+        productId: "real",
+      });
+      await setDoc(doc(db, "users/alice/members/bob"), {
+        email: "bob@shop.test",
+      });
+    });
+    const alice = verified("alice");
+    const bob = verified("bob");
+    await assertFails(deleteDoc(doc(bob, "users/alice/movements/a")));
+    await assertFails(deleteDoc(doc(alice, "users/alice/movements/b")));
+    await assertSucceeds(deleteDoc(doc(alice, "users/alice/movements/a")));
+  });
+
+  it("won't let a real product become a sample", async () => {
+    const alice = verified("alice");
+    const ref = doc(alice, "users/alice/products/one");
+    await assertSucceeds(setDoc(ref, valid()));
+    await assertFails(
+      updateDoc(ref, { sample: true, updatedAt: serverTimestamp() }),
+    );
+    await assertFails(
+      setDoc(doc(alice, "users/alice/products/two"), {
+        ...valid(),
+        sample: false,
+      }),
+    );
+  });
+});

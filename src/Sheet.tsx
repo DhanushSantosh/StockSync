@@ -380,7 +380,7 @@ function ProductForm({
   }
 
   function field(
-    key: keyof ProductInput,
+    key: Exclude<keyof ProductInput, "sample">,
     label: string,
     numeric = false,
     required = true,
@@ -590,6 +590,8 @@ export function Sheet({
   panel,
   products,
   canManage,
+  shopName,
+  onTour,
   onPanel,
   onClose,
   onNotice,
@@ -597,6 +599,8 @@ export function Sheet({
   panel: Panel;
   products: Product[];
   canManage: boolean;
+  shopName: string;
+  onTour: () => void;
   onPanel: (panel: Panel) => void;
   onClose: () => void;
   onNotice: (message: string) => void;
@@ -669,7 +673,12 @@ export function Sheet({
               onNotice={onNotice}
             />
           ) : panel.kind === "settings" ? (
-            <SettingsPanel onDone={close} onNotice={onNotice} />
+            <SettingsPanel
+              shopName={shopName}
+              onTour={onTour}
+              onDone={close}
+              onNotice={onNotice}
+            />
           ) : !product ? (
             <p className="hint">This product no longer exists.</p>
           ) : panel.kind === "edit" ? (

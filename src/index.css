@@ -253,6 +253,12 @@ button:disabled {
     animation: sheet-out 180ms ease-in forwards;
   }
 
+  /* Its shadow is the dimmed screen, leaving only the explained item lit. */
+  .tour-spot {
+    @apply absolute rounded-control outline-2 outline-accent transition-all duration-300 ease-snap;
+    box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.72);
+  }
+
   .page {
     animation: rise 280ms var(--ease-snap);
   }

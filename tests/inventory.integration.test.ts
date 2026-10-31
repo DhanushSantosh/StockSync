@@ -29,6 +29,8 @@ import {
   removeMember,
   recordCredit,
   removeProduct,
+  removeSampleProducts,
+  sampleProducts,
   undoMovement,
   type Product,
 } from "../src/inventory";
@@ -580,4 +582,59 @@ describe("stock movement workflow", () => {
       (await getDocs(collection(owner, "users/alice/members"))).empty,
     ).toBe(true);
   });
+});
+
+describe("sample products", () => {
+  it("leaves no history behind when one sample is deleted", async () => {
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    await createProducts(db, "alice", sampleProducts("Groceries").slice(0, 1));
+    const products = await getDocs(collection(db, "users/alice/products"));
+    await removeProduct(db, "alice", products.docs[0].id);
+    expect((await getDocs(collection(db, "users/alice/products"))).empty).toBe(
+      true,
+    );
+    expect((await getDocs(collection(db, "users/alice/movements"))).empty).toBe(
+      true,
+    );
+  });
+
+  it(
+    "removes samples and their history but keeps the shop's own",
+    { timeout: 20000 },
+    async () => {
+      const db = env
+        .authenticatedContext("alice", { email_verified: true })
+        .firestore();
+      await createProducts(db, "alice", sampleProducts("Groceries"));
+      await createProduct(db, "alice", {
+        name: "Real Rice",
+        sku: "",
+        category: "Groceries",
+        quantity: 10,
+        lowStockThreshold: 3,
+        targetStock: 0,
+        supplier: "",
+      });
+      const read = async () =>
+        (await getDocs(collection(db, "users/alice/products"))).docs.map(
+          (item) => ({ id: item.id, ...item.data() }) as Product,
+        );
+      const sold = (await read()).find(
+        (item) => item.sample && item.quantity > 0,
+      )!;
+      await adjustStock(db, "alice", sold.id, {
+        kind: "sale",
+        amount: 1,
+        note: "",
+      });
+      await removeSampleProducts(db, "alice", await read());
+      expect((await read()).map((item) => item.name)).toEqual(["Real Rice"]);
+      const history = await getDocs(collection(db, "users/alice/movements"));
+      expect(history.docs.map((item) => item.data().productName)).toEqual([
+        "Real Rice",
+      ]);
+    },
+  );
 });

@@ -21,10 +21,12 @@ import {
   subscribeToMembership,
   subscribeToMovements,
   subscribeToProducts,
+  subscribeToProfile,
   subscribeToRecentMovements,
   type Customer,
   type Movement,
   type Product,
+  type ShopProfile,
 } from "./inventory";
 import type { Panel } from "./Sheet";
 import { Alert } from "./ui";
@@ -48,6 +50,15 @@ const RecordPage = lazy(() =>
 );
 const ReorderPage = lazy(() =>
   import("./ReorderPage").then((file) => ({ default: file.ReorderPage })),
+);
+const GettingStarted = lazy(() =>
+  import("./GettingStarted").then((file) => ({ default: file.GettingStarted })),
+);
+const Setup = lazy(() =>
+  import("./Setup").then((file) => ({ default: file.Setup })),
+);
+const Tour = lazy(() =>
+  import("./Tour").then((file) => ({ default: file.Tour })),
 );
 const Sheet = lazy(() =>
   import("./Sheet").then((file) => ({ default: file.Sheet })),
@@ -87,6 +98,35 @@ function AppShell({ user }: { user: User }) {
   const canManage = shop === user.uid;
   const importProducts = () => setPanel({ kind: "import" });
   const [offline, setOffline] = useState(() => navigator.onLine === false);
+  const [profile, setProfile] = useState<ShopProfile | null>(null);
+  const [employer, setEmployer] = useState<ShopProfile>({});
+  const [movementsLoaded, setMovementsLoaded] = useState(false);
+  const [settingUp, setSettingUp] = useState(false);
+  const [setupFinished, setSetupFinished] = useState(false);
+  const [touring, setTouring] = useState(false);
+  const shopName = (canManage ? profile : employer)?.name;
+
+  // New accounts only: anyone with stock or history is already running a shop.
+  const isNew =
+    canManage &&
+    !loading &&
+    movementsLoaded &&
+    !!profile &&
+    !profile.setupDone &&
+    products.length === 0 &&
+    movements.length === 0;
+  if (isNew && !settingUp) setSettingUp(true);
+
+  function finishSetup(tour: boolean) {
+    setSetupFinished(true);
+    setTouring(tour);
+  }
+
+  function openStep(step: number) {
+    if (step === 0) add();
+    else if (step === 2) setPage("Products");
+    else setPage("Record");
+  }
 
   useEffect(() => {
     const update = () => setOffline(navigator.onLine === false);
@@ -109,6 +149,16 @@ function AppShell({ user }: { user: User }) {
       setShopId(id);
     });
   }, [user.uid, user.email]);
+
+  useEffect(() => {
+    if (!db) return;
+    return subscribeToProfile(db, user.uid, setProfile);
+  }, [user.uid]);
+
+  useEffect(() => {
+    if (!db || !shop || shop === user.uid) return;
+    return subscribeToProfile(db, shop, setEmployer);
+  }, [shop, user.uid]);
 
   useEffect(() => {
     if (!db || !shop) return;
@@ -144,9 +194,13 @@ function AppShell({ user }: { user: User }) {
       historySize,
       (items) => {
         setMovements(items);
+        setMovementsLoaded(true);
         setActivityError("");
       },
-      onError,
+      (message) => {
+        setMovementsLoaded(true);
+        onError(message);
+      },
     );
     const stopChart = subscribeToRecentMovements(
       db,
@@ -187,6 +241,18 @@ function AppShell({ user }: { user: User }) {
     return () => window.removeEventListener("resize", measure);
   }, [page, attention]);
 
+  if (settingUp && !setupFinished && profile)
+    return (
+      <Suspense fallback={<div className="min-h-dvh bg-ink" />}>
+        <Setup
+          user={user}
+          profile={profile}
+          products={products}
+          onDone={finishSetup}
+        />
+      </Suspense>
+    );
+
   return (
     <div className="mx-auto max-w-[1240px] px-gutter pt-[env(safe-area-inset-top)] pb-[calc(var(--tabbar)+1rem)] md:pb-10">
       <a
@@ -196,8 +262,8 @@ function AppShell({ user }: { user: User }) {
         Skip to content
       </a>
       <header className="flex min-h-12 flex-wrap items-center gap-1.5 md:min-h-[72px] md:gap-3">
-        <span className="text-title font-semibold tracking-tight">
-          StockSync
+        <span className="min-w-0 truncate text-title font-semibold tracking-tight md:max-w-64">
+          {shopName || "StockSync"}
         </span>
         <nav className="menu mx-auto max-md:hidden" aria-label="Main">
           <span
@@ -214,6 +280,7 @@ function AppShell({ user }: { user: User }) {
                 menu.current[item] = node;
               }}
               className="menu-item"
+              data-tour={item}
               aria-current={page === item ? "page" : undefined}
               onClick={() => setPage(item)}
             >
@@ -257,7 +324,7 @@ function AppShell({ user }: { user: User }) {
             <Alert>{loadError}</Alert>
           </div>
         )}
-        {loading ? (
+        {loading || !profile || !movementsLoaded ? (
           <div className="grid gap-gap md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
             <div className="skeleton h-[26rem]" />
             <div className="skeleton h-[26rem]" />
@@ -267,6 +334,15 @@ function AppShell({ user }: { user: User }) {
             <div key={page} className="page">
               {page !== "Overview" && (
                 <h1 className="mb-gap text-heading font-semibold">{t(page)}</h1>
+              )}
+              {page === "Overview" && canManage && profile.setupDone && (
+                <GettingStarted
+                  products={products}
+                  movements={movements}
+                  hidden={!!profile.checklistHidden}
+                  onNotice={setNotice}
+                  onStep={openStep}
+                />
               )}
               {page === "Overview" ? (
                 <OverviewPage
@@ -321,6 +397,7 @@ function AppShell({ user }: { user: User }) {
             <button
               key={item}
               className="tab"
+              data-tour={item}
               aria-current={page === item ? "page" : undefined}
               onClick={() => setPage(item)}
             >
@@ -351,10 +428,17 @@ function AppShell({ user }: { user: User }) {
             panel={panel}
             products={products}
             canManage={canManage}
+            shopName={shopName ?? ""}
+            onTour={() => setTouring(true)}
             onPanel={setPanel}
             onClose={() => setPanel(null)}
             onNotice={setNotice}
           />
+        </Suspense>
+      )}
+      {touring && (
+        <Suspense fallback={null}>
+          <Tour onClose={() => setTouring(false)} />
         </Suspense>
       )}
       <div role="status" aria-live="polite">

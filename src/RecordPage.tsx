@@ -5,6 +5,7 @@ import { CreditForm } from "./CreditForm";
 import { errorText, savedMessage, useFocusTrap } from "./display";
 import { auth, db } from "./firebase";
 import {
+  endOfDayNote,
   findByCode,
   formatMoney,
   formatQuantity,
@@ -84,6 +85,8 @@ function SaleForm({
     lines.reduce((sum, line) => sum + line.amount, 0),
   );
   const open = reviewing && lines.length > 0;
+  // A sample sale on credit would leave a real debt once samples are removed.
+  const practice = lines.some((line) => line.product.sample);
   const total = lines.reduce(
     (sum, { product, amount }) => sum + amount * (product.sellPrice ?? 0),
     0,
@@ -126,7 +129,7 @@ function SaleForm({
         ),
       );
       const customer = customers.find((item) => item.id === creditTo);
-      if (customer && total > 0)
+      if (customer && total > 0 && !practice)
         await recordCredit(db, shopId(), customer, Math.round(total), "Sale");
       setCart({});
       setNote("");
@@ -301,7 +304,7 @@ function SaleForm({
               <span className="tabular">{formatMoney(total)}</span>
             </div>
           )}
-          {customers.length > 0 && total > 0 && (
+          {customers.length > 0 && total > 0 && !practice && (
             <label className="field-label mt-4">
               Payment
               <select
@@ -382,7 +385,7 @@ function CountForm({
     try {
       const changes: StockChange[] = changed.map((product) => {
         const counted = Number(counts[product.id]);
-        const note = "End-of-day count";
+        const note = endOfDayNote;
         return {
           product,
           action:

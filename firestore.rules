@@ -12,7 +12,7 @@ service cloud.firestore {
 
     function validProduct(data) {
       return data.keys().hasAll(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'targetStock', 'supplier', 'costPrice', 'sellPrice', 'onOrder', 'unit', 'packSize', 'expiryDate', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'sku', 'category', 'quantity', 'lowStockThreshold', 'targetStock', 'supplier', 'costPrice', 'sellPrice', 'onOrder', 'unit', 'packSize', 'expiryDate', 'sample', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.sku is string && data.sku.size() <= 60
         && data.category is string && data.category.size() > 0 && data.category.size() <= 60
@@ -26,6 +26,7 @@ service cloud.firestore {
         && (!('unit' in data) || data.unit in ['pcs', 'kg', 'L'])
         && (!('packSize' in data) || (data.packSize is int && data.packSize >= 1))
         && (!('expiryDate' in data) || (data.expiryDate is string && data.expiryDate.size() <= 10))
+        && (!('sample' in data) || data.sample == true)
         && data.createdAt is timestamp && data.updatedAt is timestamp;
     }
 
@@ -120,6 +121,26 @@ service cloud.firestore {
       allow read, create, delete: if signedInAs(uid);
     }
 
+    // Only a sample product's own history can go, and never one's real records.
+    function sampleHistory(uid, productId) {
+      return signedInAs(uid)
+        && get(/databases/$(database)/documents/users/$(uid)/products/$(productId)).data.get('sample', false) == true;
+    }
+
+    function validProfile(data) {
+      return data.keys().hasOnly(['name', 'kind', 'setupDone', 'checklistHidden'])
+        && (!('name' in data) || (data.name is string && data.name.size() <= 60))
+        && (!('kind' in data) || data.kind in ['Groceries', 'Stationery', 'Medical', 'Hardware', 'Other'])
+        && (!('setupDone' in data) || data.setupDone is bool)
+        && (!('checklistHidden' in data) || data.checklistHidden is bool);
+    }
+
+    match /users/{uid}/profile/{name} {
+      allow read: if inShop(uid);
+      allow create, update: if signedInAs(uid) && name == 'shop' && validProfile(request.resource.data);
+      allow delete: if signedInAs(uid);
+    }
+
     match /users/{uid}/customers/{customerId} {
       allow read: if inShop(uid);
       allow create, update: if inShop(uid) && validCustomer(request.resource.data);
@@ -142,6 +163,7 @@ service cloud.firestore {
       allow update: if validProduct(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
+        && request.resource.data.get('sample', false) == resource.data.get('sample', false)
         && (signedInAs(uid) || (isMember(uid)
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['quantity', 'onOrder', 'expiryDate', 'updatedAt'])));
@@ -149,7 +171,7 @@ service cloud.firestore {
 
     match /users/{uid}/movements/{movementId} {
       allow read: if inShop(uid);
-      allow delete: if closing(uid);
+      allow delete: if closing(uid) || sampleHistory(uid, resource.data.productId);
       allow create: if inShop(uid) && validMovement(request.resource.data)
         && validUndo(request.resource.data, movementId)
         && (signedInAs(uid) || request.resource.data.by == request.auth.token.email)

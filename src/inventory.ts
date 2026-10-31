@@ -50,6 +50,7 @@ export type Product = {
   unit?: Unit;
   packSize?: number;
   expiryDate?: string;
+  sample?: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 };
@@ -66,6 +67,7 @@ export type ProductInput = Pick<
   unit?: Unit;
   packSize?: number;
   expiryDate?: string;
+  sample?: boolean;
 };
 
 export type MovementKind =
@@ -625,6 +627,7 @@ function addProduct(
     unit: input.unit ?? "pcs",
     packSize: input.packSize ?? 1,
     expiryDate: input.expiryDate ?? "",
+    ...(input.sample ? { sample: true } : {}),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -693,6 +696,10 @@ export async function editProduct(
 
 export async function removeProduct(db: Firestore, uid: string, id: string) {
   const product = await readProduct(db, uid, id);
+  if (product.sample) {
+    await removeSampleProducts(db, uid, [product]);
+    return "saved";
+  }
   const batch = writeBatch(db);
   batch.delete(doc(db, "users", uid, "products", id));
   batch.set(doc(movementsPath(db, uid)), {
@@ -889,6 +896,152 @@ async function cancelInvites(db: Firestore, uid: string) {
   await Promise.all(old.docs.map((item) => deleteDoc(item.ref)));
 }
 
+export const shopKinds = [
+  "Groceries",
+  "Stationery",
+  "Medical",
+  "Hardware",
+  "Other",
+] as const;
+export type ShopKind = (typeof shopKinds)[number];
+
+export const defaultAlertLevel = 5;
+export const endOfDayNote = "End-of-day count";
+
+export type ShopProfile = {
+  name?: string;
+  kind?: ShopKind;
+  setupDone?: boolean;
+  checklistHidden?: boolean;
+};
+
+export const categoryFor = (kind: ShopKind) =>
+  kind === "Other" ? "General" : kind;
+
+const sampleItems: Record<ShopKind, [string, string, number, number][]> = {
+  Groceries: [
+    ["Parle-G 250g", "Biscuits", 48, 2500],
+    ["Tata Salt 1kg", "Staples", 30, 2800],
+    ["Amul Butter 100g", "Dairy", 3, 5600],
+    ["Surf Excel 500g", "Household", 12, 7500],
+    ["Maggi Noodles 70g", "Snacks", 0, 1400],
+  ],
+  Stationery: [
+    ["Classmate Notebook", "Notebooks", 40, 6000],
+    ["Reynolds Pen", "Pens", 120, 1000],
+    ["Fevicol 50g", "Adhesives", 4, 3000],
+    ["Geometry Box", "School", 15, 12000],
+    ["A4 Paper 500 sheets", "Paper", 0, 28000],
+  ],
+  Medical: [
+    ["Dolo 650 Strip", "Tablets", 50, 3000],
+    ["Dettol 100ml", "Antiseptics", 14, 5500],
+    ["ORS Sachet", "Wellness", 3, 2100],
+    ["Band-Aid Pack", "First aid", 20, 4500],
+    ["Vicks VapoRub 25g", "Cold care", 0, 9000],
+  ],
+  Hardware: [
+    ["Wood Screws Box", "Fasteners", 25, 12000],
+    ["Insulation Tape", "Electrical", 40, 2000],
+    ["LED Bulb 9W", "Electrical", 4, 9900],
+    ["Paint Brush 2 inch", "Paint", 18, 6500],
+    ["Hammer 500g", "Tools", 0, 25000],
+  ],
+  Other: [
+    ["Sample Item A", "General", 30, 5000],
+    ["Sample Item B", "General", 14, 12000],
+    ["Sample Item C", "General", 3, 8000],
+    ["Sample Item D", "General", 0, 2500],
+  ],
+};
+
+export function sampleProducts(kind: ShopKind): ProductInput[] {
+  return sampleItems[kind].map(([name, category, quantity, sellPrice]) => ({
+    name,
+    sku: "",
+    category,
+    quantity,
+    lowStockThreshold: defaultAlertLevel,
+    targetStock: 20,
+    supplier: "Sample supplier",
+    sellPrice,
+    costPrice: Math.round(sellPrice * 0.8),
+    sample: true,
+  }));
+}
+
+export function gettingStarted(
+  products: Pick<Product, "sample" | "lowStockThreshold" | "targetStock">[],
+  movements: Pick<Movement, "kind" | "note">[],
+) {
+  const own = products.filter((product) => !product.sample);
+  return [
+    { label: "Add your products", done: own.length > 0 },
+    {
+      label: "Record your first sale",
+      done: movements.some((item) => item.kind === "sale"),
+    },
+    {
+      label: "Set your alert levels",
+      done: own.some(
+        (product) =>
+          product.lowStockThreshold !== defaultAlertLevel ||
+          (product.targetStock ?? 0) > 0,
+      ),
+    },
+    {
+      label: "Do one end-of-day count",
+      done: movements.some((item) => item.note === endOfDayNote),
+    },
+  ];
+}
+
+const profileRef = (db: Firestore, uid: string) =>
+  doc(db, "users", uid, "profile", "shop");
+
+export function subscribeToProfile(
+  db: Firestore,
+  uid: string,
+  onData: (profile: ShopProfile) => void,
+) {
+  return onSnapshot(
+    profileRef(db, uid),
+    (snapshot) => onData((snapshot.data() ?? {}) as ShopProfile),
+    () => onData({}),
+  );
+}
+
+export const saveProfile = (db: Firestore, uid: string, changes: ShopProfile) =>
+  settle(setDoc(profileRef(db, uid), changes, { merge: true }));
+
+// History is removed first: the rules allow that only while the product exists.
+export async function removeSampleProducts(
+  db: Firestore,
+  uid: string,
+  products: Product[],
+) {
+  if (navigator.onLine === false)
+    throw new Error("Connect to the internet to remove sample products.");
+  const samples = products.filter((product) => product.sample);
+  for (const product of samples) {
+    const history = await getDocsFromServer(
+      query(movementsPath(db, uid), where("productId", "==", product.id)),
+    );
+    for (let start = 0; start < history.docs.length; start += 400) {
+      const batch = writeBatch(db);
+      for (const item of history.docs.slice(start, start + 400))
+        batch.delete(item.ref);
+      await batch.commit();
+    }
+  }
+  for (let start = 0; start < samples.length; start += 400) {
+    const batch = writeBatch(db);
+    for (const product of samples.slice(start, start + 400))
+      batch.delete(doc(productsPath(db, uid), product.id));
+    await batch.commit();
+  }
+}
+
 export async function createInvite(db: Firestore, uid: string) {
   await cancelInvites(db, uid);
   const code = [...crypto.getRandomValues(new Uint8Array(8))]
@@ -1069,6 +1222,7 @@ export function subscribeToCreditEntries(
 }
 
 const shopCollections = [
+  "profile",
   "products",
   "movements",
   "customers",
