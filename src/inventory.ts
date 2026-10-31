@@ -1,18 +1,15 @@
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocFromCache,
   getDocs,
-  getDocsFromServer,
   increment,
   limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -20,16 +17,11 @@ import {
   type Timestamp,
   type WriteBatch,
 } from "firebase/firestore";
+import { inBatches, settle, settleAll } from "./firestoreWrites";
+import { writeCredit, type Customer } from "./credit";
+import { removeSampleProducts } from "./shop";
 
-// The shop being worked on, which is a staff member's employer's account.
-let activeShop = "";
-let actor = "";
-export const shopId = () => activeShop;
-export function setShop(shop: string, email: string) {
-  activeShop = shop;
-  actor = email;
-}
-const madeBy = () => (actor ? { by: actor } : {});
+const madeBy = (actor?: string) => (actor ? { by: actor } : {});
 
 export const units = ["pcs", "kg", "L"] as const;
 export type Unit = (typeof units)[number];
@@ -537,64 +529,6 @@ export async function fetchAllMovements(db: Firestore, uid: string) {
   );
 }
 
-export type SaveResult = "saved" | "queued";
-
-const offlineWait = 8000;
-let reportSyncFailure: (error: unknown) => void = () => {};
-export function onSyncFailure(listener: (error: unknown) => void) {
-  reportSyncFailure = listener;
-}
-
-// Firestore only resolves a write once the server confirms it, so an offline
-// write would wait forever. Past the wait it stays queued on this device.
-function settle(write: Promise<void>): Promise<SaveResult> {
-  return new Promise((resolve, reject) => {
-    let queued = false;
-    const timer = setTimeout(
-      () => {
-        queued = true;
-        resolve("queued");
-      },
-      navigator.onLine === false ? 0 : offlineWait,
-    );
-    write.then(
-      () => {
-        clearTimeout(timer);
-        resolve("saved");
-      },
-      (error) => {
-        clearTimeout(timer);
-        if (queued) reportSyncFailure(error);
-        else reject(error);
-      },
-    );
-  });
-}
-
-async function settleAll(batches: WriteBatch[]): Promise<SaveResult> {
-  const results = await Promise.all(
-    batches.map((batch) => settle(batch.commit())),
-  );
-  return results.includes("queued") ? "queued" : "saved";
-}
-
-// Firestore allows 500 writes per batch; each item here writes two documents.
-const itemsPerBatch = 200;
-function inBatches<T>(
-  db: Firestore,
-  items: T[],
-  write: (batch: WriteBatch, item: T) => void,
-) {
-  const batches: WriteBatch[] = [];
-  for (let start = 0; start < items.length; start += itemsPerBatch) {
-    const batch = writeBatch(db);
-    for (const item of items.slice(start, start + itemsPerBatch))
-      write(batch, item);
-    batches.push(batch);
-  }
-  return batches;
-}
-
 async function readProduct(db: Firestore, uid: string, id: string) {
   const ref = doc(db, "users", uid, "products", id);
   let snapshot;
@@ -612,6 +546,7 @@ function addProduct(
   uid: string,
   batch: WriteBatch,
   input: ProductInput,
+  actor?: string,
 ) {
   const productRef = doc(productsPath(db, uid));
   batch.set(productRef, {
@@ -639,7 +574,7 @@ function addProduct(
     quantityBefore: 0,
     quantityAfter: input.quantity,
     note: "Initial stock",
-    ...madeBy(),
+    ...madeBy(actor),
     createdAt: serverTimestamp(),
   });
 }
@@ -648,13 +583,16 @@ export async function createProducts(
   db: Firestore,
   uid: string,
   inputs: ProductInput[],
+  actor?: string,
 ) {
   for (const input of inputs) {
     const error = validateProduct(input, true);
     if (error) throw new Error(`${input.name}: ${error}`);
   }
   return settleAll(
-    inBatches(db, inputs, (batch, input) => addProduct(db, uid, batch, input)),
+    inBatches(db, inputs, (batch, input) =>
+      addProduct(db, uid, batch, input, actor),
+    ),
   );
 }
 
@@ -662,10 +600,11 @@ export async function createProduct(
   db: Firestore,
   uid: string,
   input: ProductInput,
+  actor?: string,
 ) {
   const error = validateProduct(input, true);
   if (error) throw new Error(error);
-  return createProducts(db, uid, [input]);
+  return createProducts(db, uid, [input], actor);
 }
 
 export async function editProduct(
@@ -694,7 +633,12 @@ export async function editProduct(
   );
 }
 
-export async function removeProduct(db: Firestore, uid: string, id: string) {
+export async function removeProduct(
+  db: Firestore,
+  uid: string,
+  id: string,
+  actor?: string,
+) {
   const product = await readProduct(db, uid, id);
   if (product.sample) {
     await removeSampleProducts(db, uid, [product]);
@@ -711,7 +655,7 @@ export async function removeProduct(db: Firestore, uid: string, id: string) {
     quantityBefore: product.quantity,
     quantityAfter: 0,
     note: "Product removed",
-    ...madeBy(),
+    ...madeBy(actor),
     createdAt: serverTimestamp(),
   });
   return settle(batch.commit());
@@ -750,7 +694,10 @@ function nextQuantity({ product, action }: StockChange) {
     throw new Error(
       `Insufficient stock for ${product.name}: ${product.quantity} on hand.`,
     );
-  if (next === product.quantity)
+  if (
+    next === product.quantity &&
+    !(kind === "sale" && action.clampAtZero && amount > 0)
+  )
     throw new Error("The stock count is already correct.");
   return next;
 }
@@ -764,45 +711,69 @@ function noteFor({ product, action }: StockChange) {
 
 // Writes use increment rather than a transaction so they can queue offline.
 // A count sets the exact number, because that is what was seen on the shelf.
+type PlannedStockChange = StockChange & { next: number; note: string };
+
+function writeStockChange(
+  db: Firestore,
+  uid: string,
+  batch: WriteBatch,
+  { product, action, next, note }: PlannedStockChange,
+  actor?: string,
+) {
+  const change = roundQuantity(next - product.quantity);
+  batch.update(doc(db, "users", uid, "products", product.id), {
+    // Decimals would drift under increment, so loose goods store the total.
+    quantity:
+      action.kind === "correction" || action.clampAtZero || isLoose(product)
+        ? next
+        : increment(change),
+    ...(action.expiryDate ? { expiryDate: action.expiryDate } : {}),
+    // A delivery comes off whatever was on order.
+    ...(action.kind === "restock" && product.onOrder
+      ? { onOrder: Math.max(product.onOrder - action.amount, 0) }
+      : {}),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(movementsPath(db, uid)), {
+    productId: product.id,
+    productName: product.name,
+    kind: action.kind,
+    change,
+    quantityBefore: product.quantity,
+    quantityAfter: next,
+    note,
+    ...moneyForChange(product, action.kind, action.amount),
+    ...madeBy(actor),
+    createdAt: serverTimestamp(),
+  });
+}
+
 export async function recordStockChanges(
   db: Firestore,
   uid: string,
   changes: StockChange[],
+  credit?: { customer: Pick<Customer, "id" | "name">; amount: number },
+  actor?: string,
 ) {
   const planned = changes.map((change) => ({
     ...change,
     next: nextQuantity(change),
     note: noteFor(change),
   }));
+  if (credit) {
+    // Two writes per product plus two for the customer must fit one atomic batch.
+    if (planned.length > 199)
+      throw new Error("A credit sale can contain at most 199 products.");
+    const batch = writeBatch(db);
+    for (const change of planned)
+      writeStockChange(db, uid, batch, change, actor);
+    writeCredit(db, uid, batch, credit.customer, credit.amount, "Sale", actor);
+    return settle(batch.commit());
+  }
   return settleAll(
-    inBatches(db, planned, (batch, { product, action, next, note }) => {
-      const change = roundQuantity(next - product.quantity);
-      batch.update(doc(db, "users", uid, "products", product.id), {
-        // Decimals would drift under increment, so loose goods store the total.
-        quantity:
-          action.kind === "correction" || action.clampAtZero || isLoose(product)
-            ? next
-            : increment(change),
-        ...(action.expiryDate ? { expiryDate: action.expiryDate } : {}),
-        // A delivery comes off whatever was on order.
-        ...(action.kind === "restock" && product.onOrder
-          ? { onOrder: Math.max(product.onOrder - action.amount, 0) }
-          : {}),
-        updatedAt: serverTimestamp(),
-      });
-      batch.set(doc(movementsPath(db, uid)), {
-        productId: product.id,
-        productName: product.name,
-        kind: action.kind,
-        change,
-        quantityBefore: product.quantity,
-        quantityAfter: next,
-        note,
-        ...moneyForChange(product, action.kind, action.amount),
-        ...madeBy(),
-        createdAt: serverTimestamp(),
-      });
-    }),
+    inBatches(db, planned, (batch, change) =>
+      writeStockChange(db, uid, batch, change, actor),
+    ),
   );
 }
 
@@ -811,15 +782,17 @@ export async function adjustStock(
   uid: string,
   id: string,
   action: StockAction,
+  actor?: string,
 ) {
   const product = await readProduct(db, uid, id);
-  return recordStockChanges(db, uid, [{ product, action }]);
+  return recordStockChanges(db, uid, [{ product, action }], undefined, actor);
 }
 
 export async function undoMovement(
   db: Firestore,
   uid: string,
   movement: Movement,
+  actor?: string,
 ) {
   const product = await readProduct(db, uid, movement.productId);
   const next = roundQuantity(product.quantity - movement.change);
@@ -841,7 +814,7 @@ export async function undoMovement(
     quantityAfter: next,
     note: movementLabels[movement.kind],
     undoes: movement.id,
-    ...madeBy(),
+    ...madeBy(actor),
     ...(movement.revenue ? { revenue: 0 - movement.revenue } : {}),
     ...(movement.profit ? { profit: 0 - movement.profit } : {}),
     createdAt: serverTimestamp(),
@@ -872,7 +845,12 @@ export function cancelOrder(db: Firestore, uid: string, ids: string[]) {
   );
 }
 
-export function receiveOrder(db: Firestore, uid: string, products: Product[]) {
+export function receiveOrder(
+  db: Firestore,
+  uid: string,
+  products: Product[],
+  actor?: string,
+) {
   return recordStockChanges(
     db,
     uid,
@@ -884,371 +862,7 @@ export function receiveOrder(db: Firestore, uid: string, products: Product[]) {
         note: "Order received",
       },
     })),
+    undefined,
+    actor,
   );
-}
-
-const inviteAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-async function cancelInvites(db: Firestore, uid: string) {
-  const old = await getDocs(
-    query(collection(db, "shopInvites"), where("owner", "==", uid)),
-  );
-  await Promise.all(old.docs.map((item) => deleteDoc(item.ref)));
-}
-
-export const shopKinds = [
-  "Groceries",
-  "Stationery",
-  "Medical",
-  "Hardware",
-  "Other",
-] as const;
-export type ShopKind = (typeof shopKinds)[number];
-
-export const defaultAlertLevel = 5;
-export const endOfDayNote = "End-of-day count";
-
-export type ShopProfile = {
-  name?: string;
-  kind?: ShopKind;
-  setupDone?: boolean;
-  checklistHidden?: boolean;
-};
-
-export const categoryFor = (kind: ShopKind) =>
-  kind === "Other" ? "General" : kind;
-
-const sampleItems: Record<ShopKind, [string, string, number, number][]> = {
-  Groceries: [
-    ["Parle-G 250g", "Biscuits", 48, 2500],
-    ["Tata Salt 1kg", "Staples", 30, 2800],
-    ["Amul Butter 100g", "Dairy", 3, 5600],
-    ["Surf Excel 500g", "Household", 12, 7500],
-    ["Maggi Noodles 70g", "Snacks", 0, 1400],
-  ],
-  Stationery: [
-    ["Classmate Notebook", "Notebooks", 40, 6000],
-    ["Reynolds Pen", "Pens", 120, 1000],
-    ["Fevicol 50g", "Adhesives", 4, 3000],
-    ["Geometry Box", "School", 15, 12000],
-    ["A4 Paper 500 sheets", "Paper", 0, 28000],
-  ],
-  Medical: [
-    ["Dolo 650 Strip", "Tablets", 50, 3000],
-    ["Dettol 100ml", "Antiseptics", 14, 5500],
-    ["ORS Sachet", "Wellness", 3, 2100],
-    ["Band-Aid Pack", "First aid", 20, 4500],
-    ["Vicks VapoRub 25g", "Cold care", 0, 9000],
-  ],
-  Hardware: [
-    ["Wood Screws Box", "Fasteners", 25, 12000],
-    ["Insulation Tape", "Electrical", 40, 2000],
-    ["LED Bulb 9W", "Electrical", 4, 9900],
-    ["Paint Brush 2 inch", "Paint", 18, 6500],
-    ["Hammer 500g", "Tools", 0, 25000],
-  ],
-  Other: [
-    ["Sample Item A", "General", 30, 5000],
-    ["Sample Item B", "General", 14, 12000],
-    ["Sample Item C", "General", 3, 8000],
-    ["Sample Item D", "General", 0, 2500],
-  ],
-};
-
-export function sampleProducts(kind: ShopKind): ProductInput[] {
-  return sampleItems[kind].map(([name, category, quantity, sellPrice]) => ({
-    name,
-    sku: "",
-    category,
-    quantity,
-    lowStockThreshold: defaultAlertLevel,
-    targetStock: 20,
-    supplier: "Sample supplier",
-    sellPrice,
-    costPrice: Math.round(sellPrice * 0.8),
-    sample: true,
-  }));
-}
-
-export function gettingStarted(
-  products: Pick<Product, "sample" | "lowStockThreshold" | "targetStock">[],
-  movements: Pick<Movement, "kind" | "note">[],
-) {
-  const own = products.filter((product) => !product.sample);
-  return [
-    { label: "Add your products", done: own.length > 0 },
-    {
-      label: "Record your first sale",
-      done: movements.some((item) => item.kind === "sale"),
-    },
-    {
-      label: "Set your alert levels",
-      done: own.some(
-        (product) =>
-          product.lowStockThreshold !== defaultAlertLevel ||
-          (product.targetStock ?? 0) > 0,
-      ),
-    },
-    {
-      label: "Do one end-of-day count",
-      done: movements.some((item) => item.note === endOfDayNote),
-    },
-  ];
-}
-
-const profileRef = (db: Firestore, uid: string) =>
-  doc(db, "users", uid, "profile", "shop");
-
-export function subscribeToProfile(
-  db: Firestore,
-  uid: string,
-  onData: (profile: ShopProfile) => void,
-) {
-  return onSnapshot(
-    profileRef(db, uid),
-    (snapshot) => onData((snapshot.data() ?? {}) as ShopProfile),
-    () => onData({}),
-  );
-}
-
-export const saveProfile = (db: Firestore, uid: string, changes: ShopProfile) =>
-  settle(setDoc(profileRef(db, uid), changes, { merge: true }));
-
-// History is removed first: the rules allow that only while the product exists.
-export async function removeSampleProducts(
-  db: Firestore,
-  uid: string,
-  products: Product[],
-) {
-  if (navigator.onLine === false)
-    throw new Error("Connect to the internet to remove sample products.");
-  const samples = products.filter((product) => product.sample);
-  for (const product of samples) {
-    const history = await getDocsFromServer(
-      query(movementsPath(db, uid), where("productId", "==", product.id)),
-    );
-    for (let start = 0; start < history.docs.length; start += 400) {
-      const batch = writeBatch(db);
-      for (const item of history.docs.slice(start, start + 400))
-        batch.delete(item.ref);
-      await batch.commit();
-    }
-  }
-  for (let start = 0; start < samples.length; start += 400) {
-    const batch = writeBatch(db);
-    for (const product of samples.slice(start, start + 400))
-      batch.delete(doc(productsPath(db, uid), product.id));
-    await batch.commit();
-  }
-}
-
-export async function createInvite(db: Firestore, uid: string) {
-  await cancelInvites(db, uid);
-  const code = [...crypto.getRandomValues(new Uint8Array(8))]
-    .map((value) => inviteAlphabet[value % inviteAlphabet.length])
-    .join("");
-  await setDoc(doc(db, "shopInvites", code), { owner: uid });
-  return code;
-}
-
-export async function joinShop(
-  db: Firestore,
-  uid: string,
-  email: string,
-  rawCode: string,
-) {
-  const code = rawCode.trim().toUpperCase();
-  const invite = code ? await getDoc(doc(db, "shopInvites", code)) : null;
-  if (!invite?.exists()) throw new Error("That invite code isn't valid.");
-  const owner = invite.data().owner as string;
-  if (owner === uid) throw new Error("That code is for your own shop.");
-  const batch = writeBatch(db);
-  batch.set(doc(db, "users", owner, "members", uid), { email, code });
-  batch.set(doc(db, "memberships", uid), { owner });
-  await batch.commit();
-  return owner;
-}
-
-export function subscribeToMembership(
-  db: Firestore,
-  uid: string,
-  onData: (owner: string | null) => void,
-) {
-  // Waits for the server: until then the owner's rules would refuse this user.
-  return onSnapshot(
-    doc(db, "memberships", uid),
-    { includeMetadataChanges: true },
-    (snapshot) => {
-      if (snapshot.metadata.hasPendingWrites) return;
-      onData(snapshot.exists() ? (snapshot.data().owner as string) : null);
-    },
-    () => onData(null),
-  );
-}
-
-export const forgetShop = (db: Firestore, uid: string) =>
-  deleteDoc(doc(db, "memberships", uid));
-
-export async function leaveShop(db: Firestore, uid: string, owner: string) {
-  const batch = writeBatch(db);
-  batch.delete(doc(db, "users", owner, "members", uid));
-  batch.delete(doc(db, "memberships", uid));
-  await batch.commit();
-}
-
-export type Member = { id: string; email: string };
-
-export function subscribeToMembers(
-  db: Firestore,
-  owner: string,
-  onData: (members: Member[]) => void,
-) {
-  return onSnapshot(collection(db, "users", owner, "members"), (snapshot) =>
-    onData(
-      snapshot.docs.map((item) => ({ id: item.id, email: item.data().email })),
-    ),
-  );
-}
-
-// A removed person could otherwise walk back in with the same code.
-export async function removeMember(
-  db: Firestore,
-  owner: string,
-  member: string,
-) {
-  await cancelInvites(db, owner);
-  await deleteDoc(doc(db, "users", owner, "members", member));
-}
-
-export type Customer = {
-  id: string;
-  name: string;
-  phone?: string;
-  // Paise owed to the shop.
-  balance: number;
-};
-
-export type CreditEntry = {
-  id: string;
-  customerId: string;
-  customerName: string;
-  amount: number;
-  note: string;
-  by?: string;
-  createdAt?: Timestamp;
-};
-
-export async function addCustomer(
-  db: Firestore,
-  uid: string,
-  input: { name: string; phone: string },
-  existing: Pick<Customer, "name">[],
-) {
-  const name = input.name.trim();
-  if (!name || name.length > 100)
-    throw new Error("Name must be 1–100 characters.");
-  if (existing.some((item) => normalized(item.name) === normalized(name)))
-    throw new Error(`You already have a customer called ${name}.`);
-  return settle(
-    setDoc(doc(collection(db, "users", uid, "customers")), {
-      name,
-      phone: input.phone.trim(),
-      balance: 0,
-      updatedAt: serverTimestamp(),
-    }),
-  );
-}
-
-// A positive amount is goods on credit; a negative amount is a payment.
-export function recordCredit(
-  db: Firestore,
-  uid: string,
-  customer: Pick<Customer, "id" | "name">,
-  amount: number,
-  note: string,
-) {
-  const batch = writeBatch(db);
-  batch.update(doc(db, "users", uid, "customers", customer.id), {
-    balance: increment(amount),
-    updatedAt: serverTimestamp(),
-  });
-  batch.set(doc(collection(db, "users", uid, "creditEntries")), {
-    customerId: customer.id,
-    customerName: customer.name,
-    amount,
-    note: note.trim(),
-    ...madeBy(),
-    createdAt: serverTimestamp(),
-  });
-  return settle(batch.commit());
-}
-
-export function subscribeToCustomers(
-  db: Firestore,
-  uid: string,
-  onData: (customers: Customer[]) => void,
-  onError: (message: string) => void,
-) {
-  return onSnapshot(
-    collection(db, "users", uid, "customers"),
-    (snapshot) =>
-      onData(
-        snapshot.docs
-          .map((item) => ({ id: item.id, ...item.data() }) as Customer)
-          .sort((a, b) => b.balance - a.balance),
-      ),
-    (error) => onError(error.message),
-  );
-}
-
-export function subscribeToCreditEntries(
-  db: Firestore,
-  uid: string,
-  onData: (entries: CreditEntry[]) => void,
-) {
-  return onSnapshot(
-    query(
-      collection(db, "users", uid, "creditEntries"),
-      orderBy("createdAt", "desc"),
-      limit(200),
-    ),
-    (snapshot) =>
-      onData(
-        snapshot.docs.map(
-          (item) => ({ id: item.id, ...item.data() }) as CreditEntry,
-        ),
-      ),
-  );
-}
-
-const shopCollections = [
-  "profile",
-  "products",
-  "movements",
-  "customers",
-  "creditEntries",
-  "members",
-];
-
-// Reads from the server so nothing is missed by a partial offline cache. If it
-// stops partway, running it again finishes the job.
-export async function deleteAccountData(
-  db: Firestore,
-  uid: string,
-  employer: string | null,
-) {
-  if (employer) await leaveShop(db, uid, employer);
-  await cancelInvites(db, uid);
-  const closing = doc(db, "users", uid, "closing", "request");
-  await setDoc(closing, {});
-  for (const name of shopCollections) {
-    const records = await getDocsFromServer(collection(db, "users", uid, name));
-    for (let start = 0; start < records.docs.length; start += 400) {
-      const batch = writeBatch(db);
-      for (const item of records.docs.slice(start, start + 400))
-        batch.delete(item.ref);
-      await batch.commit();
-    }
-  }
-  await deleteDoc(closing);
 }

@@ -26,9 +26,9 @@ function Scanner({
           await new BrowserMultiFormatReader().decodeFromConstraints(
             { video: { facingMode: "environment" } },
             video.current ?? undefined,
-            (result) => {
+            (result, _error, scanControls) => {
               if (!result) return;
-              controls.stop();
+              scanControls.stop();
               onCode(result.getText());
               onClose();
             },

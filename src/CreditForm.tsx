@@ -3,22 +3,24 @@ import { errorText, savedMessage } from "./display";
 import { db } from "./firebase";
 import {
   addCustomer,
-  formatMoney,
-  parseMoney,
   recordCredit,
-  shopId,
   subscribeToCreditEntries,
   type CreditEntry,
   type Customer,
-} from "./inventory";
+} from "./credit";
+import { formatMoney, parseMoney } from "./inventory";
 import { Alert } from "./ui";
 import { t } from "./i18n";
 
 function CustomerRow({
+  shop,
+  actor,
   customer,
   entries,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   customer: Customer;
   entries: CreditEntry[];
   onNotice: (message: string) => void;
@@ -41,10 +43,11 @@ function CustomerRow({
     try {
       const result = await recordCredit(
         db,
-        shopId(),
+        shop,
         customer,
         direction * paise,
         note,
+        actor,
       );
       onNotice(
         savedMessage(
@@ -143,9 +146,13 @@ function CustomerRow({
 }
 
 export function CreditForm({
+  shop,
+  actor,
   customers,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   customers: Customer[];
   onNotice: (message: string) => void;
 }) {
@@ -161,8 +168,8 @@ export function CreditForm({
 
   useEffect(() => {
     if (!db) return;
-    return subscribeToCreditEntries(db, shopId(), setEntries);
-  }, []);
+    return subscribeToCreditEntries(db, shop, setEntries);
+  }, [shop]);
 
   async function add(event: FormEvent) {
     event.preventDefault();
@@ -170,12 +177,7 @@ export function CreditForm({
     setBusy(true);
     setProblem("");
     try {
-      const result = await addCustomer(
-        db,
-        shopId(),
-        { name, phone },
-        customers,
-      );
+      const result = await addCustomer(db, shop, { name, phone }, customers);
       onNotice(savedMessage(result, t("Customer added.")));
       setName("");
       setPhone("");
@@ -197,6 +199,8 @@ export function CreditForm({
         </div>
         {customers.map((customer) => (
           <CustomerRow
+            shop={shop}
+            actor={actor}
             key={customer.id}
             customer={customer}
             entries={entries.filter((item) => item.customerId === customer.id)}

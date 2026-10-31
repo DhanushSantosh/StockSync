@@ -4,18 +4,16 @@ import { BarcodeButton } from "./BarcodeButton";
 import { CreditForm } from "./CreditForm";
 import { errorText, savedMessage, useFocusTrap } from "./display";
 import { auth, db } from "./firebase";
+import { endOfDayNote } from "./shop";
+import type { Customer } from "./credit";
 import {
-  endOfDayNote,
   findByCode,
   formatMoney,
   formatQuantity,
-  recordCredit,
   recordStockChanges,
   roundQuantity,
-  shopId,
   unitSuffix,
   validQuantity,
-  type Customer,
   type Product,
   type StockChange,
 } from "./inventory";
@@ -61,10 +59,14 @@ function SearchBox({
 }
 
 function SaleForm({
+  shop,
+  actor,
   products,
   customers,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   products: Product[];
   customers: Customer[];
   onNotice: (message: string) => void;
@@ -121,16 +123,24 @@ function SaleForm({
           product,
           action: { kind: "sale", amount, note, clampAtZero: true },
         }));
-      const result = await recordStockChanges(db, shopId(), changes);
+      if (changes.length === 0)
+        throw new Error("Add at least one product to this sale.");
+      const customer = customers.find((item) => item.id === creditTo);
+      const result = await recordStockChanges(
+        db,
+        shop,
+        changes,
+        customer && total > 0 && !practice
+          ? { customer, amount: Math.round(total) }
+          : undefined,
+        actor,
+      );
       onNotice(
         savedMessage(
           result,
           `Sale of ${units} ${units === 1 ? "unit" : "units"} recorded.`,
         ),
       );
-      const customer = customers.find((item) => item.id === creditTo);
-      if (customer && total > 0 && !practice)
-        await recordCredit(db, shopId(), customer, Math.round(total), "Sale");
       setCart({});
       setNote("");
       setCreditTo("");
@@ -352,9 +362,13 @@ function SaleForm({
 }
 
 function CountForm({
+  shop,
+  actor,
   products,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   products: Product[];
   onNotice: (message: string) => void;
 }) {
@@ -394,7 +408,13 @@ function CountForm({
               : { kind: "correction", amount: counted, note },
         };
       });
-      const result = await recordStockChanges(db, shopId(), changes);
+      const result = await recordStockChanges(
+        db,
+        shop,
+        changes,
+        undefined,
+        actor,
+      );
       onNotice(
         savedMessage(
           result,
@@ -489,10 +509,14 @@ function CountForm({
 const modes = ["Sale", "Count", "Credit"] as const;
 
 export function RecordPage({
+  shop,
+  actor,
   products,
   customers,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   products: Product[];
   customers: Customer[];
   onNotice: (message: string) => void;
@@ -518,19 +542,31 @@ export function RecordPage({
         ))}
       </div>
       {mode === "Credit" ? (
-        <CreditForm customers={customers} onNotice={onNotice} />
+        <CreditForm
+          shop={shop}
+          actor={actor}
+          customers={customers}
+          onNotice={onNotice}
+        />
       ) : products.length === 0 ? (
         <section className="panel hint py-14 text-center">
           Add products before recording stock.
         </section>
       ) : mode === "Sale" ? (
         <SaleForm
+          shop={shop}
+          actor={actor}
           products={products}
           customers={customers}
           onNotice={onNotice}
         />
       ) : (
-        <CountForm products={products} onNotice={onNotice} />
+        <CountForm
+          shop={shop}
+          actor={actor}
+          products={products}
+          onNotice={onNotice}
+        />
       )}
     </div>
   );

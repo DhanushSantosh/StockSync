@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { ClipboardCopy, Download } from "lucide-react";
+import { downloadCsv } from "./csv";
+import type { SaveResult } from "./firestoreWrites";
 import { errorText, savedMessage } from "./display";
 import { auth, db } from "./firebase";
 import {
@@ -8,23 +10,22 @@ import {
   markOrdered,
   packsNeeded,
   receiveOrder,
-  shopId,
   statusOf,
   suggestedReorder,
   type Product,
-  type SaveResult,
 } from "./inventory";
 import { Alert, Status, Ticker } from "./ui";
 import { t } from "./i18n";
 
-const csvCell = (value: string | number) =>
-  `"${String(value).replaceAll('"', '""')}"`;
-
 export function ReorderPage({
+  shop,
+  actor,
   products,
   onSelect,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   products: Product[];
   onSelect: (product: Product) => void;
   onNotice: (message: string) => void;
@@ -66,7 +67,7 @@ export function ReorderPage({
     setBusy(true);
     setProblem("");
     try {
-      onNotice(savedMessage(await save(db, shopId()), done));
+      onNotice(savedMessage(await save(db, shop), done));
     } catch (cause) {
       setProblem(errorText(cause));
     } finally {
@@ -114,16 +115,7 @@ export function ReorderPage({
         suggestedReorder(product) ?? "",
       ]),
     ];
-    const blob = new Blob(
-      [rows.map((row) => row.map(csvCell).join(",")).join("\r\n")],
-      { type: "text/csv;charset=utf-8" },
-    );
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "stocksync-reorder.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv("stocksync-reorder.csv", rows);
   }
 
   if (items.length === 0)
@@ -254,7 +246,8 @@ export function ReorderPage({
                   disabled={busy}
                   onClick={() =>
                     run(
-                      (database, uid) => receiveOrder(database, uid, coming),
+                      (database, uid) =>
+                        receiveOrder(database, uid, coming, actor),
                       `Order from ${supplier} received.`,
                     )
                   }

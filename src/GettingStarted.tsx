@@ -3,23 +3,19 @@ import { Check } from "lucide-react";
 import { errorText } from "./display";
 import { db } from "./firebase";
 import { t } from "./i18n";
-import {
-  gettingStarted,
-  removeSampleProducts,
-  saveProfile,
-  shopId,
-  type Movement,
-  type Product,
-} from "./inventory";
+import { gettingStarted, removeSampleProducts, saveProfile } from "./shop";
+import type { Movement, Product } from "./inventory";
 import { Alert } from "./ui";
 
 export function GettingStarted({
+  shop,
   products,
   movements,
   hidden,
   onNotice,
   onStep,
 }: {
+  shop: string;
   products: Product[];
   movements: Movement[];
   hidden: boolean;
@@ -38,7 +34,7 @@ export function GettingStarted({
     setBusy(true);
     setProblem("");
     try {
-      await removeSampleProducts(db, shopId(), products);
+      await removeSampleProducts(db, shop, products);
       onNotice(t("Sample products removed."));
     } catch (cause) {
       setProblem(errorText(cause));
@@ -56,7 +52,7 @@ export function GettingStarted({
             <button
               className="btn-link"
               onClick={() =>
-                db && saveProfile(db, shopId(), { checklistHidden: true })
+                db && saveProfile(db, shop, { checklistHidden: true })
               }
             >
               {t(done === steps.length ? "Done" : "Hide")}

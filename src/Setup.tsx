@@ -8,18 +8,20 @@ import { ImportProducts } from "./ImportProducts";
 import {
   categoryFor,
   createInvite,
-  createProduct,
-  createProducts,
   defaultAlertLevel,
   joinShop,
-  parseMoney,
   sampleProducts,
   saveProfile,
   shopKinds,
-  validQuantity,
-  type Product,
   type ShopKind,
   type ShopProfile,
+} from "./shop";
+import {
+  createProduct,
+  createProducts,
+  parseMoney,
+  validQuantity,
+  type Product,
 } from "./inventory";
 import { Alert } from "./ui";
 
@@ -157,16 +159,21 @@ export function Setup({
     if (!validQuantity(quantity, {}))
       throw new Error("Enter stock as a whole number.");
     if (sellPrice === null) throw new Error("Enter a valid selling price.");
-    await createProduct(db, user.uid, {
-      name: product.name,
-      sku: "",
-      category: categoryFor(kind),
-      quantity,
-      lowStockThreshold: defaultAlertLevel,
-      targetStock: 0,
-      supplier: "",
-      sellPrice,
-    });
+    await createProduct(
+      db,
+      user.uid,
+      {
+        name: product.name,
+        sku: "",
+        category: categoryFor(kind),
+        quantity,
+        lowStockThreshold: defaultAlertLevel,
+        targetStock: 0,
+        supplier: "",
+        sellPrice,
+      },
+      user.email ?? "",
+    );
     setAdded((names) => [...names, product.name.trim()]);
     setProduct({ name: "", stock: "", price: "" });
   }
@@ -175,7 +182,12 @@ export function Setup({
     run(async () => {
       if (!db) return;
       if (start === "sample" && !products.some((item) => item.sample))
-        await createProducts(db, user.uid, sampleProducts(kind));
+        await createProducts(
+          db,
+          user.uid,
+          sampleProducts(kind),
+          user.email ?? "",
+        );
       if (start === "hand" && product.name.trim()) await addProduct();
       setStep("staff");
     });
@@ -399,6 +411,8 @@ export function Setup({
             {start === "csv" && (
               <div className="mt-4">
                 <ImportProducts
+                  shop={user.uid}
+                  actor={user.email ?? ""}
                   products={products}
                   onDone={() => setStep("staff")}
                   onNotice={() => {}}

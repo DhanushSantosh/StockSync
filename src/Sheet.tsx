@@ -11,7 +11,6 @@ import {
   matchCategory,
   parseMoney,
   removeProduct,
-  shopId,
   similarCategory,
   unitSuffix,
   units,
@@ -76,6 +75,8 @@ const modes: { kind: Mode; label: string; noun: string; amount: string }[] = [
 ];
 
 function StockForm({
+  shop,
+  actor,
   product,
   canManage,
   onEdit,
@@ -83,6 +84,8 @@ function StockForm({
   onDone,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   product: Product;
   canManage: boolean;
   onEdit: () => void;
@@ -129,13 +132,19 @@ function StockForm({
             ? "Enter an amount with up to 3 decimals."
             : "Enter a whole number of units.",
         );
-      const result = await adjustStock(db, shopId(), product.id, {
-        kind: mode,
-        amount: entered,
-        note,
-        clampAtZero: short,
-        expiryDate: mode === "restock" ? expiry : undefined,
-      });
+      const result = await adjustStock(
+        db,
+        shop,
+        product.id,
+        {
+          kind: mode,
+          amount: entered,
+          note,
+          clampAtZero: short,
+          expiryDate: mode === "restock" ? expiry : undefined,
+        },
+        actor,
+      );
       onNotice(savedMessage(result, t("Stock change recorded.")));
       onDone();
     } catch (cause) {
@@ -302,12 +311,16 @@ function StockForm({
 }
 
 function ProductForm({
+  shop,
+  actor,
   product,
   products,
   onCancel,
   onDone,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   product: Product | null;
   products: Product[];
   onCancel: () => void;
@@ -352,7 +365,7 @@ function ProductForm({
     try {
       const duplicate = duplicateProblem(input, products, product?.id);
       if (duplicate) throw new Error(duplicate);
-      const uid = shopId();
+      const uid = shop;
       const costPrice = parseMoney(cost);
       const sellPrice = parseMoney(price);
       if (costPrice === null || sellPrice === null)
@@ -365,7 +378,7 @@ function ProductForm({
       };
       const result = product
         ? await editProduct(db, uid, product.id, saved)
-        : await createProduct(db, uid, saved);
+        : await createProduct(db, uid, saved, actor);
       onNotice(
         savedMessage(
           result,
@@ -531,11 +544,15 @@ function ProductForm({
 }
 
 function DeleteConfirm({
+  shop,
+  actor,
   product,
   onCancel,
   onDone,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   product: Product;
   onCancel: () => void;
   onDone: () => void;
@@ -548,7 +565,7 @@ function DeleteConfirm({
     setBusy(true);
     setError("");
     try {
-      const result = await removeProduct(db, shopId(), product.id);
+      const result = await removeProduct(db, shop, product.id, actor);
       onNotice(savedMessage(result, t("Product deleted.")));
       onDone();
     } catch (cause) {
@@ -587,6 +604,8 @@ function DeleteConfirm({
 }
 
 export function Sheet({
+  shop,
+  actor,
   panel,
   products,
   canManage,
@@ -596,6 +615,8 @@ export function Sheet({
   onClose,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   panel: Panel;
   products: Product[];
   canManage: boolean;
@@ -660,6 +681,8 @@ export function Sheet({
         <div key={panel.kind} className="page">
           {panel.kind === "create" ? (
             <ProductForm
+              shop={shop}
+              actor={actor}
               product={null}
               products={products}
               onCancel={close}
@@ -668,12 +691,15 @@ export function Sheet({
             />
           ) : panel.kind === "import" ? (
             <ImportProducts
+              shop={shop}
+              actor={actor}
               products={products}
               onDone={close}
               onNotice={onNotice}
             />
           ) : panel.kind === "settings" ? (
             <SettingsPanel
+              shop={shop}
               shopName={shopName}
               onTour={onTour}
               onDone={close}
@@ -683,6 +709,8 @@ export function Sheet({
             <p className="hint">This product no longer exists.</p>
           ) : panel.kind === "edit" ? (
             <ProductForm
+              shop={shop}
+              actor={actor}
               product={product}
               products={products}
               onCancel={back}
@@ -691,6 +719,8 @@ export function Sheet({
             />
           ) : panel.kind === "delete" ? (
             <DeleteConfirm
+              shop={shop}
+              actor={actor}
               product={product}
               onCancel={back}
               onDone={close}
@@ -698,6 +728,8 @@ export function Sheet({
             />
           ) : (
             <StockForm
+              shop={shop}
+              actor={actor}
               product={product}
               canManage={canManage}
               onEdit={() => onPanel({ kind: "edit", id: product.id })}

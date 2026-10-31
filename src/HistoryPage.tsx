@@ -1,27 +1,28 @@
 import { useCallback, useMemo, useState } from "react";
 import { Download, Search } from "lucide-react";
+import { downloadCsv } from "./csv";
 import { errorText, savedMessage } from "./display";
 import { auth, db } from "./firebase";
 import {
   fetchAllMovements,
   movementLabels,
-  shopId,
   undoMovement,
   type Movement,
 } from "./inventory";
 import { Alert, Changes } from "./ui";
 import { t } from "./i18n";
 
-const csvCell = (value: string | number) =>
-  `"${String(value).replaceAll('"', '""')}"`;
-
 export function HistoryPage({
+  shop,
+  actor,
   movements,
   error,
   hasMore,
   onLoadMore,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   movements: Movement[];
   error: string;
   hasMore: boolean;
@@ -49,7 +50,7 @@ export function HistoryPage({
     if (!db || !auth?.currentUser) return;
     setProblem("");
     try {
-      const result = await undoMovement(db, shopId(), movement);
+      const result = await undoMovement(db, shop, movement, actor);
       onNotice(savedMessage(result, t("Change undone.")));
     } catch (cause) {
       setProblem(errorText(cause));
@@ -62,7 +63,7 @@ export function HistoryPage({
     setProblem("");
     let all: Movement[];
     try {
-      all = matching(await fetchAllMovements(db, shopId()));
+      all = matching(await fetchAllMovements(db, shop));
     } catch (cause) {
       setProblem(errorText(cause));
       return;
@@ -93,16 +94,7 @@ export function HistoryPage({
         movement.note,
       ]),
     ];
-    const blob = new Blob(
-      [rows.map((row) => row.map(csvCell).join(",")).join("\r\n")],
-      { type: "text/csv;charset=utf-8" },
-    );
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "stocksync-history.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv("stocksync-history.csv", rows);
   }
 
   return (

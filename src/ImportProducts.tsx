@@ -3,7 +3,7 @@ import { Upload } from "lucide-react";
 import { errorText, savedMessage } from "./display";
 import { auth, db } from "./firebase";
 import { parseProductsCsv, templateCsv } from "./importCsv";
-import { createProducts, shopId, type Product } from "./inventory";
+import { createProducts, type Product } from "./inventory";
 import { Alert } from "./ui";
 
 function downloadTemplate() {
@@ -17,10 +17,14 @@ function downloadTemplate() {
 }
 
 export function ImportProducts({
+  shop,
+  actor,
   products,
   onDone,
   onNotice,
 }: {
+  shop: string;
+  actor: string;
   products: Product[];
   onDone: () => void;
   onNotice: (message: string) => void;
@@ -46,7 +50,7 @@ export function ImportProducts({
     setError("");
     try {
       const count = parsed.rows.length;
-      const result = await createProducts(db, shopId(), parsed.rows);
+      const result = await createProducts(db, shop, parsed.rows, actor);
       onNotice(
         savedMessage(
           result,

@@ -6,7 +6,9 @@ import {
 } from "@firebase/rules-unit-testing";
 import {
   collection,
+  deleteDoc,
   disableNetwork,
+  doc,
   enableNetwork,
   getDocs,
   getDocsFromCache,
@@ -17,23 +19,24 @@ import {
   adjustStock,
   createProduct,
   createProducts,
-  deleteAccountData,
   recordStockChanges,
-  addCustomer,
   cancelOrder,
-  createInvite,
   fetchAllMovements,
-  joinShop,
   markOrdered,
   receiveOrder,
-  removeMember,
-  recordCredit,
   removeProduct,
-  removeSampleProducts,
-  sampleProducts,
   undoMovement,
   type Product,
 } from "../src/inventory";
+import { addCustomer, recordCredit } from "../src/credit";
+import {
+  deleteAccountData,
+  createInvite,
+  joinShop,
+  removeMember,
+  removeSampleProducts,
+  sampleProducts,
+} from "../src/shop";
 
 let env: RulesTestEnvironment;
 beforeAll(async () => {
@@ -329,6 +332,31 @@ describe("stock movement workflow", () => {
     expect(sale?.note).toMatch(/13 sold with 10 on hand/);
   });
 
+  it("records a sale from zero stock without making stock negative", async () => {
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    await createProduct(db, "alice", {
+      ...shelf,
+      name: "Pen",
+      quantity: 0,
+      sellPrice: 1000,
+    });
+    const product = (await listProducts(db))[0];
+    await recordStockChanges(db, "alice", [
+      {
+        product,
+        action: { kind: "sale", amount: 2, note: "", clampAtZero: true },
+      },
+    ]);
+    expect((await listProducts(db))[0].quantity).toBe(0);
+    const sale = (await fetchAllMovements(db, "alice")).find(
+      (item) => item.kind === "sale",
+    );
+    expect(sale).toMatchObject({ change: 0, revenue: 2000 });
+    expect(sale?.note).toMatch(/2 sold with 0 on hand/);
+  });
+
   it("reads history past the first 50 changes", async () => {
     const db = env
       .authenticatedContext("alice", { email_verified: true })
@@ -507,6 +535,69 @@ describe("stock movement workflow", () => {
     await expect(
       addCustomer(db, "alice", { name: " ravi ", phone: "" }, [await read()]),
     ).rejects.toThrow(/already/);
+  });
+
+  it("keeps a credit sale atomic when the customer write fails", async () => {
+    const db = env
+      .authenticatedContext("alice", { email_verified: true })
+      .firestore();
+    const product = await oneProduct(db);
+    await addCustomer(db, "alice", { name: "Ravi", phone: "" }, []);
+    const customer = (await getDocs(collection(db, "users/alice/customers")))
+      .docs[0];
+    await deleteDoc(doc(db, "users", "alice", "customers", customer.id));
+    await expect(
+      recordStockChanges(
+        db,
+        "alice",
+        [{ product, action: { kind: "sale", amount: 2, note: "" } }],
+        { customer: { id: customer.id, name: "Ravi" }, amount: 2000 },
+      ),
+    ).rejects.toThrow();
+    expect((await listProducts(db))[0].quantity).toBe(10);
+    expect(
+      (await fetchAllMovements(db, "alice")).filter(
+        (item) => item.kind === "sale",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("saves a credit sale, balance, and actor together", async () => {
+    const db = env
+      .authenticatedContext("alice", {
+        email: "alice@shop.test",
+        email_verified: true,
+      })
+      .firestore();
+    const product = await oneProduct(db);
+    await addCustomer(db, "alice", { name: "Ravi", phone: "" }, []);
+    const customer = (await getDocs(collection(db, "users/alice/customers")))
+      .docs[0];
+    await recordStockChanges(
+      db,
+      "alice",
+      [{ product, action: { kind: "sale", amount: 2, note: "" } }],
+      { customer: { id: customer.id, name: "Ravi" }, amount: 2000 },
+      "alice@shop.test",
+    );
+    expect((await listProducts(db))[0].quantity).toBe(8);
+    expect(
+      (await getDocs(collection(db, "users/alice/customers"))).docs[0].data()
+        .balance,
+    ).toBe(2000);
+    expect(
+      (
+        await getDocs(collection(db, "users/alice/creditEntries"))
+      ).docs[0].data(),
+    ).toMatchObject({
+      amount: 2000,
+      by: "alice@shop.test",
+    });
+    expect(
+      (await fetchAllMovements(db, "alice")).find(
+        (item) => item.kind === "sale",
+      )?.by,
+    ).toBe("alice@shop.test");
   });
 
   it("cancels the invite code when staff are removed", async () => {

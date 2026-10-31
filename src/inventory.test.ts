@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { gettingStarted, sampleProducts, shopKinds } from "./shop";
 import {
   categoryTotals,
   canUndo,
@@ -7,11 +8,8 @@ import {
   duplicateProblem,
   expiringSoon,
   findByCode,
-  gettingStarted,
   formatQuantity,
   groupByDay,
-  sampleProducts,
-  shopKinds,
   inventorySummary,
   matchCategory,
   moneyForChange,

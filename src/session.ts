@@ -13,10 +13,23 @@ import {
   waitForPendingWrites,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
-import { deleteAccountData, shopId } from "./inventory";
+import { deleteAccountData } from "./shop";
 
-// Clears this device's copy of the shop, so the next person using a shared
-// phone can't read it. Unsynced changes would be lost, so those block it.
+// A failed cache clear must block sign-out rather than silently leave shop
+// data behind. Firestore must be restarted with a page refresh after failure.
+async function clearLocalData() {
+  if (!db) return;
+  await terminate(db);
+  try {
+    await clearIndexedDbPersistence(db);
+  } catch {
+    throw new Error(
+      "Could not clear this device's saved data. Close other StockSync tabs, refresh this page, then try again.",
+    );
+  }
+}
+
+// Unsynced changes would be lost, so they block sign-out.
 export async function signOutOfDevice() {
   if (!auth) return;
   if (db) {
@@ -29,11 +42,8 @@ export async function signOutOfDevice() {
         "You have changes waiting to sync. Connect to the internet, then sign out.",
       );
   }
+  await clearLocalData();
   await signOut(auth);
-  if (db) {
-    await terminate(db);
-    await clearIndexedDbPersistence(db).catch(() => {});
-  }
   location.reload();
 }
 
@@ -63,17 +73,15 @@ async function confirmIdentity(user: User, password: string) {
 export const needsPassword = () =>
   !!auth?.currentUser && signsInWithPassword(auth.currentUser);
 
-export async function deleteAccount(password: string) {
+export async function deleteAccount(password: string, shop: string) {
   const user = auth?.currentUser;
   if (!db || !auth || !user) return;
   if (navigator.onLine === false)
     throw new Error("Connect to the internet to delete your account.");
   // Before touching any data, so a wrong password deletes nothing.
   await confirmIdentity(user, password);
-  const shop = shopId();
   await deleteAccountData(db, user.uid, shop === user.uid ? null : shop);
+  await clearLocalData();
   await deleteUser(user);
-  await terminate(db);
-  await clearIndexedDbPersistence(db).catch(() => {});
   location.reload();
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { SaveResult } from "./inventory";
+import type { SaveResult } from "./firestoreWrites";
 
 // Restarts a CSS tick each time a value moves; key an element on `id`.
 export function useTick(value: number) {

@@ -13,7 +13,7 @@ A real-time inventory app for a single shopkeeper. It helps answer three daily q
 - Give staff their own login with an invite code. Staff record stock but cannot change products or prices, and History shows who made each change.
 - Track what customers owe, on a sale or by hand, and record their payments.
 - Use the app in English or Hindi.
-- Sign in with Google, or with email and a verified address. Security Rules keep unverified accounts out, and signing out clears the shop's data from the device. Settings can permanently delete an account and all of its shop data.
+- Sign in with Google, or with email and a verified address. Security Rules keep unverified accounts out. Sign-out waits for pending changes and clears Firestore's browser cache; if clearing fails, the app asks you to close other StockSync tabs and retry. Settings can permanently delete an account and its shop data.
 - Track cost and selling prices in rupees for stock value, sales, and profit. Each sale keeps the amounts from when it happened.
 - Browse, search, filter, and export recent stock changes, including before/after quantities and optional notes.
 - See live stock totals, a 14-day chart, and stock alerts on multiple signed-in devices. Firebase Authentication also provides password-reset email.

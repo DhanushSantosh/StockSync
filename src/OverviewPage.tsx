@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { signed, useNow } from "./display";
+import type { Customer } from "./credit";
 import {
   categoryTotals,
   expiringSoon,
@@ -10,7 +11,6 @@ import {
   stockValue,
   suggestedReorder,
   unitsByDay,
-  type Customer,
   type Movement,
   type Product,
 } from "./inventory";

@@ -9,26 +9,26 @@ import {
   leaveShop,
   removeMember,
   saveProfile,
-  shopId,
   subscribeToMembers,
   type Member,
-} from "./inventory";
+} from "./shop";
 import { Alert } from "./ui";
 import { currentLanguage, setLanguage, t, type Language } from "./i18n";
 
 export function SettingsPanel({
+  shop,
   shopName,
   onTour,
   onDone,
   onNotice,
 }: {
+  shop: string;
   shopName: string;
   onTour: () => void;
   onDone: () => void;
   onNotice: (message: string) => void;
 }) {
   const user = auth?.currentUser;
-  const shop = shopId();
   const isOwner = shop === user?.uid;
   const [members, setMembers] = useState<Member[]>([]);
   const [invite, setInvite] = useState("");
@@ -212,7 +212,7 @@ export function SettingsPanel({
       <button className="btn-soft w-full" onClick={() => run(signOutOfDevice)}>
         {t("Sign out")}
       </button>
-      <DeleteAccount isOwner={isOwner} />
+      <DeleteAccount isOwner={isOwner} shop={shop} />
     </div>
   );
 }

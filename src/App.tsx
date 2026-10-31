@@ -11,22 +11,22 @@ import {
   Settings,
 } from "lucide-react";
 import { errorText } from "./display";
-import { auth, configured, db } from "./firebase";
+import { onSyncFailure } from "./firestoreWrites";
+import { subscribeToCustomers, type Customer } from "./credit";
 import {
   forgetShop,
-  onSyncFailure,
-  setShop,
-  statusOf,
-  subscribeToCustomers,
   subscribeToMembership,
+  subscribeToProfile,
+  type ShopProfile,
+} from "./shop";
+import { auth, configured, db } from "./firebase";
+import {
+  statusOf,
   subscribeToMovements,
   subscribeToProducts,
-  subscribeToProfile,
   subscribeToRecentMovements,
-  type Customer,
   type Movement,
   type Product,
-  type ShopProfile,
 } from "./inventory";
 import type { Panel } from "./Sheet";
 import { Alert } from "./ui";
@@ -145,7 +145,6 @@ function AppShell({ user }: { user: User }) {
     if (!db) return;
     return subscribeToMembership(db, user.uid, (owner) => {
       const id = owner ?? user.uid;
-      setShop(id, user.email ?? "");
       setShopId(id);
     });
   }, [user.uid, user.email]);
@@ -324,7 +323,7 @@ function AppShell({ user }: { user: User }) {
             <Alert>{loadError}</Alert>
           </div>
         )}
-        {loading || !profile || !movementsLoaded ? (
+        {loading || !shop || !profile || !movementsLoaded ? (
           <div className="grid gap-gap md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
             <div className="skeleton h-[26rem]" />
             <div className="skeleton h-[26rem]" />
@@ -337,6 +336,7 @@ function AppShell({ user }: { user: User }) {
               )}
               {page === "Overview" && canManage && profile.setupDone && (
                 <GettingStarted
+                  shop={shop}
                   products={products}
                   movements={movements}
                   hidden={!!profile.checklistHidden}
@@ -367,18 +367,24 @@ function AppShell({ user }: { user: User }) {
                 />
               ) : page === "Record" ? (
                 <RecordPage
+                  shop={shop}
+                  actor={user.email ?? ""}
                   products={products}
                   customers={customers}
                   onNotice={setNotice}
                 />
               ) : page === "Reorder" ? (
                 <ReorderPage
+                  shop={shop}
+                  actor={user.email ?? ""}
                   products={products}
                   onSelect={select}
                   onNotice={setNotice}
                 />
               ) : (
                 <HistoryPage
+                  shop={shop}
+                  actor={user.email ?? ""}
                   movements={movements}
                   error={activityError}
                   hasMore={movements.length >= historySize}
@@ -421,9 +427,11 @@ function AppShell({ user }: { user: User }) {
           );
         })}
       </nav>
-      {panel && (
+      {panel && shop && (
         <Suspense fallback={null}>
           <Sheet
+            shop={shop}
+            actor={user.email ?? ""}
             key={"id" in panel ? panel.id : panel.kind}
             panel={panel}
             products={products}

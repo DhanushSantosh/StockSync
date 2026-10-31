@@ -4,7 +4,13 @@ import { t } from "./i18n";
 import { deleteAccount, needsPassword } from "./session";
 import { Alert } from "./ui";
 
-export function DeleteAccount({ isOwner }: { isOwner: boolean }) {
+export function DeleteAccount({
+  isOwner,
+  shop,
+}: {
+  isOwner: boolean;
+  shop: string;
+}) {
   const [open, setOpen] = useState(false);
   const [word, setWord] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +23,7 @@ export function DeleteAccount({ isOwner }: { isOwner: boolean }) {
     setBusy(true);
     setProblem("");
     try {
-      await deleteAccount(password);
+      await deleteAccount(password, shop);
     } catch (cause) {
       setProblem(errorText(cause));
       setBusy(false);
