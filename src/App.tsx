@@ -253,7 +253,7 @@ function AppShell({ user }: { user: User }) {
     );
 
   return (
-    <div className="mx-auto max-w-[1240px] px-gutter pt-[env(safe-area-inset-top)] pb-[calc(var(--tabbar)+1rem)] md:pb-10">
+    <div className="mx-auto max-w-[1240px] px-gutter pt-[env(safe-area-inset-top)] pb-[calc(var(--tabbar)+0.5rem)] md:pb-10">
       <a
         href="#content"
         className="btn-accent fixed top-2 left-2 z-[70] -translate-y-24 focus:translate-y-0"

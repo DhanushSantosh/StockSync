@@ -48,10 +48,10 @@
   --size-title: 1.125rem;
   --size-heading: 1.375rem;
   --size-gutter: clamp(0.75rem, 4vw, 1.5rem);
-  --size-pad: 1rem;
-  --size-gap: 0.75rem;
+  --size-pad: 0.875rem;
+  --size-gap: 0.625rem;
   --size-control: 3rem;
-  --tab-height: 4rem;
+  --tab-height: 3.75rem;
   --tabbar: calc(var(--tab-height) + env(safe-area-inset-bottom));
   color-scheme: dark;
   -webkit-tap-highlight-color: transparent;

@@ -177,7 +177,7 @@ function SaleForm({
           {results.map((product) => (
             <button
               key={product.id}
-              className="btn-row flex w-full items-center justify-between gap-3 border-t border-line px-pad py-3"
+              className="btn-row flex w-full items-center justify-between gap-3 border-t border-line px-pad py-2.5 md:py-3"
               onClick={() => add(product)}
             >
               <span className="min-w-0">

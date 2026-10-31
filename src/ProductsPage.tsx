@@ -104,7 +104,7 @@ export function ProductsPage({
           {visible.map((product) => (
             <button
               key={product.id}
-              className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-1.5 border-b border-line px-pad py-3 last:border-b-0 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_5rem_6.5rem]"
+              className="btn-row grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-1.5 border-b border-line px-pad py-2.5 last:border-b-0 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_5rem_6.5rem] md:py-3"
               onClick={() => onSelect(product)}
             >
               <span className="min-w-0">
