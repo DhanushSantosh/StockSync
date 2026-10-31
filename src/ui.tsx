@@ -200,3 +200,24 @@ export function Changes({
     </>
   );
 }
+
+// Sign-in and email confirmation share this: the claim beside the form on a
+// computer, and above it on a phone.
+export function AuthFrame({ children }: { children: ReactNode }) {
+  return (
+    <main className="grid min-h-dvh grid-rows-[auto_1fr] md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] md:grid-rows-1">
+      <div className="flex flex-col px-gutter pt-[calc(env(safe-area-inset-top)+1.25rem)] md:justify-between md:bg-panel md:p-10">
+        <p className="text-title font-semibold tracking-tight">StockSync</p>
+        <p className="mt-3.5 max-w-[13ch] text-[2rem] leading-[1.12] font-semibold tracking-tight text-balance md:mt-0 md:text-[2.75rem]">
+          {t("Know what's left before the customer asks.")}
+        </p>
+        <span className="max-md:hidden" />
+      </div>
+      <div className="flex flex-col px-gutter pt-5 pb-[calc(env(safe-area-inset-bottom)+1rem)] md:items-center md:justify-center md:p-10">
+        <div className="page flex w-full max-w-md flex-1 flex-col md:max-w-[22.5rem] md:flex-none">
+          {children}
+        </div>
+      </div>
+    </main>
+  );
+}

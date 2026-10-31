@@ -248,6 +248,24 @@ const hindi: Record<string, string> = {
   "Sample products removed.": "नमूना उत्पाद हटा दिए गए।",
   "Shop name saved.": "दुकान का नाम सहेजा गया।",
   Save: "सहेजें",
+  "Know what's left before the customer asks.":
+    "ग्राहक के पूछने से पहले जानें कि कितना बचा है।",
+  "Forgot it?": "भूल गए?",
+  "8 characters or more": "8 या ज़्यादा अक्षर",
+  "We'll email you a link to confirm it's you.":
+    "पुष्टि के लिए हम आपको ईमेल पर एक लिंक भेजेंगे।",
+  "Link sent": "लिंक भेजा गया",
+  "Sending now": "भेजा जा रहा है",
+  "Open the link": "लिंक खोलें",
+  "Waiting. This page continues by itself, even if you open it on another device.":
+    "प्रतीक्षा जारी है। लिंक दूसरे डिवाइस पर खोलने पर भी यह पेज अपने आप आगे बढ़ेगा।",
+  "Set up your shop": "अपनी दुकान सेट करें",
+  "Takes about two minutes": "लगभग दो मिनट लगेंगे",
+  "Not there?": "नहीं मिला?",
+  "Check Spam. It comes from": "स्पैम देखें। यह इस पते से आता है:",
+  "Email sent.": "ईमेल भेजा गया।",
+  "Wrong email?": "गलत ईमेल?",
+  "Use a different account": "दूसरा खाता इस्तेमाल करें",
 };
 
 export type Language = "en" | "hi";
