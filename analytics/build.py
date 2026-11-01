@@ -165,7 +165,7 @@ def build(path: Path) -> dict:
     return {
         "version": 1,
         "source": {"name": "UCI Online Retail II", "url": SOURCE, "sha256": digest, "license": "CC BY 4.0", "country": "United Kingdom", "currency": "GBP"},
-        "period": {"firstWeek": weeks[0].strftime("%Y-%m-%d"), "lastWeek": weeks[-1].strftime("%Y-%m-%d"), "lastObservedDate": (weeks[-1] + pd.Timedelta(days=6)).strftime("%Y-%m-%d"), "holdoutStart": cutoff.strftime("%Y-%m-%d"), "holdoutWeeks": HOLDOUT_WEEKS, "illustrativeNextWeek": future_week.strftime("%Y-%m-%d")},
+        "period": {"firstWeek": weeks[0].strftime("%Y-%m-%d"), "lastWeek": weeks[-1].strftime("%Y-%m-%d"), "lastObservedDate": (weeks[-1] + pd.Timedelta(days=6)).strftime("%Y-%m-%d"), "trainingEnd": (cutoff - pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "holdoutStart": cutoff.strftime("%Y-%m-%d"), "holdoutWeeks": HOLDOUT_WEEKS, "illustrativeNextWeek": future_week.strftime("%Y-%m-%d")},
         "cleaning": counts,
         "model": {"name": "Random Forest Regression", "settings": {key: value for key, value in MODEL.items() if key != "n_jobs"}, "features": FEATURES + ["one-hot StockCode"], "trainRows": len(train), "testRows": len(test), "productCount": len(products)},
         "metrics": {"model": metrics(actual, predicted), "baseline": metrics(actual, baseline)},

@@ -14,7 +14,7 @@ type ProductInsight = {
 type InsightsData = {
   version: number;
   source: { name: string; url: string; sha256: string; country: string; currency: string };
-  period: { firstWeek: string; lastWeek: string; lastObservedDate: string; holdoutStart: string; holdoutWeeks: number; illustrativeNextWeek: string };
+  period: { firstWeek: string; lastWeek: string; lastObservedDate: string; trainingEnd: string; holdoutStart: string; holdoutWeeks: number; illustrativeNextWeek: string };
   cleaning: { rawRows: number; completeWeekRows: number };
   model: { name: string; trainRows: number; testRows: number; productCount: number };
   metrics: { model: { mae: number; rmse: number; r2: number }; baseline: { mae: number; rmse: number; r2: number } };
@@ -23,6 +23,7 @@ type InsightsData = {
 
 const data: InsightsData = raw;
 const number = (value: number) => value.toLocaleString("en-IN", { maximumFractionDigits: 1 });
+const metric = (value: number) => value.toLocaleString("en-IN", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 const date = (value: string) => new Date(`${value}T00:00:00Z`).toLocaleDateString(currentLanguage() === "hi" ? "hi-IN" : "en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 function DemandChart({ weeks }: { weeks: Week[] }) {
@@ -64,7 +65,7 @@ export function InsightsPage({ onBack }: { onBack: () => void }) {
         </p>
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-caption">
           <span>{t("Source")}: <a className="text-accent underline" href={data.source.url} target="_blank" rel="noreferrer">UCI Online Retail II <ExternalLink size={12} className="inline" /></a></span>
-          <span>{t("Training data")}: {date(data.period.firstWeek)} – {date(data.period.holdoutStart)}</span>
+          <span>{t("Training data")}: {date(data.period.firstWeek)} – {date(data.period.trainingEnd)}</span>
           <span>{t("Test period")}: {date(data.period.holdoutStart)} – {date(data.period.lastObservedDate)}</span>
         </div>
       </section>
@@ -76,7 +77,7 @@ export function InsightsPage({ onBack }: { onBack: () => void }) {
           <table className="w-full min-w-[340px] text-left text-caption tabular">
             <thead className="text-muted"><tr><th scope="col" className="pb-2 font-medium">{t("Method")}</th><th scope="col" className="pb-2 text-right font-medium">MAE</th><th scope="col" className="pb-2 text-right font-medium">RMSE</th><th scope="col" className="pb-2 text-right font-medium">R²</th></tr></thead>
             <tbody className="divide-y divide-line">
-              {([ [t("Random Forest"), data.metrics.model], [t("Previous-week baseline"), data.metrics.baseline] ] as const).map(([label, values]) => <tr key={label}><th scope="row" className="py-2 font-medium">{label}</th><td className="py-2 text-right">{number(values.mae)}</td><td className="py-2 text-right">{number(values.rmse)}</td><td className="py-2 text-right">{number(values.r2)}</td></tr>)}
+              {([ [t("Random Forest"), data.metrics.model], [t("Previous-week baseline"), data.metrics.baseline] ] as const).map(([label, values]) => <tr key={label}><th scope="row" className="py-2 font-medium">{label}</th><td className="py-2 text-right">{metric(values.mae)}</td><td className="py-2 text-right">{metric(values.rmse)}</td><td className="py-2 text-right">{metric(values.r2)}</td></tr>)}
             </tbody>
           </table>
         </div>
@@ -90,9 +91,9 @@ export function InsightsPage({ onBack }: { onBack: () => void }) {
               <h2 className="heading">{t("Product demand")}</h2>
               <p className="hint mt-1">{t("Choose a product to inspect its held-out predictions.")}</p>
             </div>
-            <label className="text-caption font-medium">
+            <label className="min-w-0 w-full text-caption font-medium md:w-auto">
               <span className="sr-only">{t("Dataset product")}</span>
-              <select className="input max-w-full" value={code} onChange={(event) => setCode(event.target.value)}>
+              <select className="input w-full md:max-w-[22rem]" value={code} onChange={(event) => setCode(event.target.value)}>
                 {data.products.map((item) => <option key={item.code} value={item.code}>{item.name} ({item.code})</option>)}
               </select>
             </label>

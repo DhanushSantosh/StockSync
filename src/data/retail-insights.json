@@ -12,6 +12,7 @@
     "firstWeek": "2009-12-07",
     "lastWeek": "2011-11-28",
     "lastObservedDate": "2011-12-04",
+    "trainingEnd": "2011-09-11",
     "holdoutStart": "2011-09-12",
     "holdoutWeeks": 12,
     "illustrativeNextWeek": "2011-12-05"
