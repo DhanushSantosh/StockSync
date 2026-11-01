@@ -45,6 +45,11 @@ const OverviewPage = lazy(() =>
 const InsightsPage = lazy(() =>
   import("./InsightsPage").then((file) => ({ default: file.InsightsPage })),
 );
+const InsightsDetailsPage = lazy(() =>
+  import("./InsightsPage").then((file) => ({
+    default: file.InsightsDetailsPage,
+  })),
+);
 const ProductsPage = lazy(() =>
   import("./ProductsPage").then((file) => ({ default: file.ProductsPage })),
 );
@@ -68,7 +73,7 @@ const Sheet = lazy(() =>
 );
 
 const pages = ["Overview", "Record", "Products", "Reorder", "History"] as const;
-type Page = (typeof pages)[number] | "Insights";
+type Page = (typeof pages)[number] | "Insights" | "InsightsDetails";
 const tabIcons = {
   Overview: LayoutDashboard,
   Record: ReceiptText,
@@ -89,8 +94,11 @@ function AppShell({ user }: { user: User }) {
   const [notice, setNotice] = useState("");
   const [historySize, setHistorySize] = useState(50);
   const [page, setPage] = useState<Page>("Overview");
+  const [insightCode, setInsightCode] = useState("");
   const [panel, setPanel] = useState<Panel | null>(null);
-  const menu = useRef<Partial<Record<(typeof pages)[number], HTMLButtonElement | null>>>({});
+  const menu = useRef<
+    Partial<Record<(typeof pages)[number], HTMLButtonElement | null>>
+  >({});
   const [pill, setPill] = useState({ left: 0, width: 0 });
   const attention = products.filter(
     (product) => statusOf(product) !== "healthy",
@@ -234,7 +242,10 @@ function AppShell({ user }: { user: User }) {
 
   useEffect(() => {
     const measure = () => {
-      const item = page === "Insights" ? menu.current.Overview : menu.current[page];
+      const item =
+        page === "Insights" || page === "InsightsDetails"
+          ? menu.current.Overview
+          : menu.current[page];
       if (item) setPill({ left: item.offsetLeft, width: item.offsetWidth });
     };
     measure();
@@ -335,7 +346,9 @@ function AppShell({ user }: { user: User }) {
           <Suspense fallback={<div className="skeleton h-[26rem]" />}>
             <div key={page} className="page">
               {page !== "Overview" && (
-                <h1 className="mb-gap text-heading font-semibold">{t(page)}</h1>
+                <h1 className="mb-gap text-heading font-semibold">
+                  {t(page === "InsightsDetails" ? "Study details" : page)}
+                </h1>
               )}
               {page === "Overview" && canManage && profile.setupDone && (
                 <GettingStarted
@@ -361,7 +374,18 @@ function AppShell({ user }: { user: User }) {
                   onNavigate={setPage}
                 />
               ) : page === "Insights" ? (
-                <InsightsPage onBack={() => setPage("Overview")} />
+                <InsightsPage
+                  code={insightCode}
+                  onCodeChange={setInsightCode}
+                  onBack={() => setPage("Overview")}
+                  onDetails={() => setPage("InsightsDetails")}
+                />
+              ) : page === "InsightsDetails" ? (
+                <InsightsDetailsPage
+                  code={insightCode}
+                  onCodeChange={setInsightCode}
+                  onBack={() => setPage("Insights")}
+                />
               ) : page === "Products" ? (
                 <ProductsPage
                   products={products}

@@ -72,7 +72,7 @@ UCI Excel workbook (local) → clean sales → weekly product series
   → versioned JSON → StockSync Retail Insights page (Firebase Hosting)
 ```
 
-Only the small derived JSON is bundled with the website. Firestore remains responsible for real shop inventory and is not populated with the UCI transactions. The Insights page requires the normal StockSync login to navigate to it, but the historical JSON is a public static website asset; it contains no shop or customer data. No Python server, Cloud Function, or paid image storage is required.
+Only the small derived JSON is bundled with the website. Firestore remains responsible for real shop inventory and is not populated with the UCI transactions. Overview links to a plain-language sample Insights page; the model metrics, source, and test rows are on its separate **How estimates were made** page. The historical JSON is a public static website asset with no shop or customer data. No Python server, Cloud Function, or paid image storage is required.
 
 ## 7. Limitations and conclusion
 
