@@ -1,4 +1,5 @@
 *.xlsx
 *.zip
 data/
+.venv/
 __pycache__/

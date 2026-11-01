@@ -14,6 +14,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 SOURCE = "https://archive.ics.uci.edu/dataset/502/online+retail+ii"
 SHA256 = "bcbe73b35f5b7babf197fb0cb983a11f5d9ff929078d4aa53d171b1f2df2e980"
+DEFAULT_INPUT = Path(__file__).resolve().parent / "data/online_retail_II.xlsx"
 HOLDOUT_WEEKS = 12
 PRODUCT_COUNT = 50
 FEATURES = ["lag1", "lag2", "lag3", "lag4", "mean4", "lastPrice", "weekOfYear"]
@@ -175,9 +176,11 @@ def build(path: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True, help="Unzipped UCI online_retail_II.xlsx")
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT, help="UCI workbook (default: analytics/data/online_retail_II.xlsx)")
     parser.add_argument("--output", type=Path, default=Path("src/data/retail-insights.json"))
     args = parser.parse_args()
+    if not args.input.is_file():
+        parser.error(f"Dataset missing: {args.input}. Download UCI Online Retail II into analytics/data/ first.")
     result = build(args.input)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")

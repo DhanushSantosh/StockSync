@@ -85,9 +85,9 @@ The experiment satisfies the SDA goal of collecting a real dataset, cleaning it,
 
 ## 8. Reproduce the results
 
-1. Download and unzip **Online Retail II** from the UCI link above. Check that the workbook SHA-256 matches the value in Section 2.
+1. Download and unzip **Online Retail II** from the UCI link above into `analytics/data/online_retail_II.xlsx` in this checkout. The `analytics/data/` directory is ignored by Git. Check that the workbook SHA-256 matches the value in Section 2.
 2. From the repository root, create a Python environment and install `analytics/requirements.txt`.
-3. Run `python analytics/build.py --input /path/to/online_retail_II.xlsx`. This writes `src/data/retail-insights.json`.
+3. Run `python analytics/build.py`. This reads the local workbook and writes `src/data/retail-insights.json`.
 4. Run `python -m unittest discover -s analytics -p 'test_*.py'` for cleaning and leakage checks.
 5. Run `python analytics/render_report.py` to regenerate figures and this PDF from the JSON, then `npm run build` to bundle the results in the app.
 

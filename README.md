@@ -82,7 +82,22 @@ Register an account, add a product with a restock target, and open StockSync in 
 
 The Overview links to a sample Retail Insights page. It shows plain-language demand estimates and sales trends for historical UCI products; a separate **How estimates were made** page contains the model evaluation and data details. The dataset's UK giftware products do **not** match this shop's inventory, and its predictions are not live shop forecasts. The Python model runs locally during preparation; the website bundles only a small derived JSON file. No raw transactions are written to Firestore.
 
-The [SDA report](docs/sda/report.md) documents the cleaning, chronological evaluation, actual metrics, figures, limitations, and reproduction steps. Its [PDF](output/pdf/StockSync-SDA-Report.pdf) is a separate submission artifact from the CC report. To rebuild the data, download the workbook from the [UCI source](https://archive.ics.uci.edu/dataset/502/online+retail+ii), install `analytics/requirements.txt` in a Python environment, then run `python analytics/build.py --input /path/to/online_retail_II.xlsx` followed by `python analytics/render_report.py`. The raw workbook belongs outside this repository.
+The [SDA report](docs/sda/report.md) documents the cleaning, chronological evaluation, actual metrics, figures, limitations, and reproduction steps. Its [PDF](output/pdf/StockSync-SDA-Report.pdf) is a separate submission artifact from the CC report. Keep the downloaded workbook at `analytics/data/online_retail_II.xlsx` in this checkout; that directory is ignored by Git. Install `analytics/requirements.txt` in a Python environment and run `python analytics/build.py` from the repository root. Run `python analytics/render_report.py` to regenerate the figures and PDF. The raw workbook is never uploaded to Firebase.
+
+To reproduce everything from the repository root on a machine with `curl`, `unzip`, and `uv`:
+
+```bash
+mkdir -p analytics/data
+curl -fL 'https://archive.ics.uci.edu/static/public/502/online+retail+ii.zip' -o analytics/data/online-retail-ii.zip
+unzip -o analytics/data/online-retail-ii.zip -d analytics/data
+uv venv --python 3.12 analytics/.venv
+uv pip install --python analytics/.venv/bin/python -r analytics/requirements.txt
+analytics/.venv/bin/python analytics/build.py
+analytics/.venv/bin/python -m unittest discover -s analytics -p 'test_*.py'
+analytics/.venv/bin/python analytics/render_report.py
+```
+
+The pipeline validates the workbook checksum, then writes the versioned app data to `src/data/retail-insights.json`. Both `analytics/data/` and `analytics/.venv/` stay local and ignored by Git.
 
 ## Scope
 
