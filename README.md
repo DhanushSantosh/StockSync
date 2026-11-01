@@ -91,13 +91,15 @@ mkdir -p analytics/data
 curl -fL 'https://archive.ics.uci.edu/static/public/502/online+retail+ii.zip' -o analytics/data/online-retail-ii.zip
 unzip -o analytics/data/online-retail-ii.zip -d analytics/data
 uv venv --python 3.12 analytics/.venv
-uv pip install --python analytics/.venv/bin/python -r analytics/requirements.txt
-analytics/.venv/bin/python analytics/build.py
-analytics/.venv/bin/python -m unittest discover -s analytics -p 'test_*.py'
-analytics/.venv/bin/python analytics/render_report.py
+source analytics/.venv/bin/activate
+uv pip install -r analytics/requirements.txt
+python analytics/build.py
+python -m unittest discover -s analytics -p 'test_*.py'
+python analytics/render_report.py
+deactivate
 ```
 
-The pipeline validates the workbook checksum, then writes the versioned app data to `src/data/retail-insights.json`. Both `analytics/data/` and `analytics/.venv/` stay local and ignored by Git.
+The activation script is `analytics/.venv/bin/activate` (the `.venv` directory is hidden from ordinary `ls` output). Activation is optional: `analytics/.venv/bin/python analytics/build.py` works without it. The pipeline validates the workbook checksum, then writes the versioned app data to `src/data/retail-insights.json`. Both `analytics/data/` and `analytics/.venv/` stay local and ignored by Git.
 
 ## Scope
 
