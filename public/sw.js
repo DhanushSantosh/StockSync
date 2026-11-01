@@ -1,6 +1,6 @@
 // Keeps the app shell available without a connection. Firestore has its own
 // offline cache, so only this site's files are handled here.
-const cacheName = "stocksync-v2";
+const cacheName = "stocksync-v3";
 
 async function cacheShell() {
   const cache = await caches.open(cacheName);

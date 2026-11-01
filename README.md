@@ -78,9 +78,15 @@ Firebase Hosting serves the `dist` folder and rewrites routes to `index.html`. B
 
 Register an account, add a product with a restock target, and open StockSync in a second browser window with the same account. Record a sale in one window; the other window, the Overview, Products, Reorder, and History screens update automatically. A normal stock deduction cannot take stock below zero; the explicit oversell option records the full sale and leaves stock at zero. Sign in with another account to confirm that inventories are separate.
 
+## SDA extension: Retail Insights
+
+The Overview links to a separate Retail Insights page. It displays a historical demand-prediction experiment using UCI Online Retail II; the dataset's UK giftware products do **not** match this shop's inventory, and its predictions are not live shop forecasts. The Python model runs locally during preparation; the website bundles only a small derived JSON file. No raw transactions are written to Firestore.
+
+The [SDA report](docs/sda/report.md) documents the cleaning, chronological evaluation, actual metrics, figures, limitations, and reproduction steps. Its [PDF](output/pdf/StockSync-SDA-Report.pdf) is a separate submission artifact from the CC report. To rebuild the data, download the workbook from the [UCI source](https://archive.ics.uci.edu/dataset/502/online+retail+ii), install `analytics/requirements.txt` in a Python environment, then run `python analytics/build.py --input /path/to/online_retail_II.xlsx` followed by `python analytics/render_report.py`. The raw workbook belongs outside this repository.
+
 ## Scope
 
-One account owns one inventory, and staff join it by invite code. Product photos, card payments, and forecasting are outside this mini-project. Expiry is one date per product rather than per batch. Connected stock changes read the latest quantity in a transaction. Offline queued changes use relative increments; their History before/after values may be approximate if another device changes stock before they sync. Offline changes are timestamped when they sync, not when they were made. This app does not depend on Cloud Storage or Cloud Functions.
+One account owns one inventory, and staff join it by invite code. Product photos, card payments, and live shop forecasting are outside this mini-project. Expiry is one date per product rather than per batch. Connected stock changes read the latest quantity in a transaction. Offline queued changes use relative increments; their History before/after values may be approximate if another device changes stock before they sync. Offline changes are timestamped when they sync, not when they were made. This app does not depend on Cloud Storage or Cloud Functions.
 
 ## Project submission
 

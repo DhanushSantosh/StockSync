@@ -42,6 +42,9 @@ const HistoryPage = lazy(() =>
 const OverviewPage = lazy(() =>
   import("./OverviewPage").then((file) => ({ default: file.OverviewPage })),
 );
+const InsightsPage = lazy(() =>
+  import("./InsightsPage").then((file) => ({ default: file.InsightsPage })),
+);
 const ProductsPage = lazy(() =>
   import("./ProductsPage").then((file) => ({ default: file.ProductsPage })),
 );
@@ -65,7 +68,7 @@ const Sheet = lazy(() =>
 );
 
 const pages = ["Overview", "Record", "Products", "Reorder", "History"] as const;
-type Page = (typeof pages)[number];
+type Page = (typeof pages)[number] | "Insights";
 const tabIcons = {
   Overview: LayoutDashboard,
   Record: ReceiptText,
@@ -87,7 +90,7 @@ function AppShell({ user }: { user: User }) {
   const [historySize, setHistorySize] = useState(50);
   const [page, setPage] = useState<Page>("Overview");
   const [panel, setPanel] = useState<Panel | null>(null);
-  const menu = useRef<Partial<Record<Page, HTMLButtonElement | null>>>({});
+  const menu = useRef<Partial<Record<(typeof pages)[number], HTMLButtonElement | null>>>({});
   const [pill, setPill] = useState({ left: 0, width: 0 });
   const attention = products.filter(
     (product) => statusOf(product) !== "healthy",
@@ -231,7 +234,7 @@ function AppShell({ user }: { user: User }) {
 
   useEffect(() => {
     const measure = () => {
-      const item = menu.current[page];
+      const item = page === "Insights" ? menu.current.Overview : menu.current[page];
       if (item) setPill({ left: item.offsetLeft, width: item.offsetWidth });
     };
     measure();
@@ -357,6 +360,8 @@ function AppShell({ user }: { user: User }) {
                   onImport={importProducts}
                   onNavigate={setPage}
                 />
+              ) : page === "Insights" ? (
+                <InsightsPage onBack={() => setPage("Overview")} />
               ) : page === "Products" ? (
                 <ProductsPage
                   products={products}

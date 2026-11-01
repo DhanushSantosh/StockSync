@@ -48,7 +48,7 @@ export function OverviewPage({
   onSelect: (product: Product) => void;
   onAdd: () => void;
   onImport: () => void;
-  onNavigate: (page: "Reorder" | "History") => void;
+  onNavigate: (page: "Reorder" | "History" | "Insights") => void;
 }) {
   const now = useNow();
   const summary = useMemo(() => inventorySummary(products), [products]);
@@ -123,6 +123,9 @@ export function OverviewPage({
             </button>
           </div>
         )}
+        <button className="btn-link mt-5" onClick={() => onNavigate("Insights")}>
+          {t("Explore retail insights")}
+        </button>
       </section>
     );
 
@@ -357,6 +360,17 @@ export function OverviewPage({
         ) : (
           <p className="hint mt-3">Changes you record will appear here.</p>
         )}
+      </section>
+
+      <section className="panel md:col-span-2">
+        <p className="text-caption font-medium uppercase tracking-wide text-accent">{t("SDA dataset demonstration")}</p>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="heading">{t("Retail demand insights")}</h2>
+            <p className="hint mt-1">{t("Explore historical UK retail sales and measured demand predictions.")}</p>
+          </div>
+          <button className="btn-soft" onClick={() => onNavigate("Insights")}>{t("Explore retail insights")}</button>
+        </div>
       </section>
     </div>
   );
