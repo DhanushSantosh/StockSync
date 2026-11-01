@@ -95,6 +95,8 @@ function AppShell({ user }: { user: User }) {
   const [historySize, setHistorySize] = useState(50);
   const [page, setPage] = useState<Page>("Overview");
   const [insightCode, setInsightCode] = useState("");
+  const inOverview =
+    page === "Overview" || page === "Insights" || page === "InsightsDetails";
   const [panel, setPanel] = useState<Panel | null>(null);
   const menu = useRef<
     Partial<Record<(typeof pages)[number], HTMLButtonElement | null>>
@@ -294,7 +296,11 @@ function AppShell({ user }: { user: User }) {
               }}
               className="menu-item"
               data-tour={item}
-              aria-current={page === item ? "page" : undefined}
+              aria-current={
+                page === item || (item === "Overview" && inOverview)
+                  ? "page"
+                  : undefined
+              }
               onClick={() => setPage(item)}
             >
               {t(item)}
@@ -433,7 +439,11 @@ function AppShell({ user }: { user: User }) {
               key={item}
               className="tab"
               data-tour={item}
-              aria-current={page === item ? "page" : undefined}
+              aria-current={
+                page === item || (item === "Overview" && inOverview)
+                  ? "page"
+                  : undefined
+              }
               onClick={() => setPage(item)}
             >
               {item === "Record" ? (
