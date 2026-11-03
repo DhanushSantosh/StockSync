@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { currentLanguage, t } from "./i18n";
 import raw from "./data/retail-insights.json";
+import demo from "./data/demo-insights.json";
 
 type Week = {
   week: string;
@@ -86,7 +88,7 @@ function DemandChart({ weeks }: { weeks: Week[] }) {
         viewBox="-2 0 104 84"
         className="h-56 w-full overflow-visible"
         role="img"
-        aria-label={t("Past and estimated sales over twelve weeks")}
+        aria-label={t("Past and estimated sales")}
       >
         <line
           x1="0"
@@ -131,9 +133,11 @@ function DemandChart({ weeks }: { weeks: Week[] }) {
 function ProductPicker({
   code,
   onChange,
+  products = data.products,
 }: {
   code: string;
   onChange: (code: string) => void;
+  products?: ProductInsight[];
 }) {
   return (
     <label className="min-w-0 w-full text-caption font-medium md:w-auto">
@@ -143,7 +147,7 @@ function ProductPicker({
         value={code}
         onChange={(event) => onChange(event.target.value)}
       >
-        {data.products.map((item) => (
+        {products.map((item) => (
           <option key={item.code} value={item.code}>
             {item.name} ({item.code})
           </option>
@@ -164,6 +168,8 @@ export function InsightsPage({
   onBack: () => void;
   onDetails: () => void;
 }) {
+  const [demoCode, setDemoCode] = useState(demo.products[0]?.code ?? "");
+  const demoProduct = demo.products.find((item) => item.code === demoCode);
   const selectedCode = code || data.products[0]?.code || "";
   const product = data.products.find((item) => item.code === selectedCode);
   return (
@@ -178,18 +184,39 @@ export function InsightsPage({
       <section className="panel">
         <h2 className="heading">{t("Explore demand by product")}</h2>
         <p className="hint mt-2">
-          {t(
-            "Sample retail products from a historical UK dataset. These estimates do not apply to your shop's products.",
-          )}
+          {t("Explore a generated grocery demo and a separate historical retail study. Neither predicts your shop's sales.")}
         </p>
       </section>
+      {demoProduct && (
+        <section className="panel">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="heading">{t("Sample grocery shop")}</h2>
+              <p className="hint mt-1">{t("Generated practice sales, not your shop's records.")}</p>
+            </div>
+            <ProductPicker code={demoCode} onChange={setDemoCode} products={demo.products} />
+          </div>
+          <div className="mt-5 grid gap-gap md:grid-cols-[minmax(0,1fr)_12rem]">
+            <DemandChart weeks={demoProduct.weeks} />
+            <div className="rounded-control bg-raised p-4">
+              <p className="hint">{t("Estimated sales for the next week")}</p>
+              <p className="mt-1 text-heading font-semibold tabular">
+                {t("About")} {number(Math.round(demoProduct.nextWeekEstimate))} {t("units")}
+              </p>
+              <p className="hint mt-2">
+                {t("Week of")} {date(demo.period.illustrativeNextWeek)}. {t("Generated example only; not a current stock recommendation.")}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
       {product ? (
         <section className="panel">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h2 className="heading">{t("Choose a sample product")}</h2>
+              <h2 className="heading">{t("Historical retail study")}</h2>
               <p className="hint mt-1">
-                {t("See how its estimated sales compare with past sales.")}
+                {t("UK giftware sales from 2009–2011; unrelated to your shop.")}
               </p>
             </div>
             <ProductPicker code={selectedCode} onChange={onCodeChange} />
@@ -280,7 +307,19 @@ export function InsightsDetailsPage({
         </div>
       </section>
       <section className="panel">
-        <h2 className="heading">{t("Measured model performance")}</h2>
+        <h2 className="heading">{t("Generated grocery demo")}</h2>
+        <p className="hint mt-1">
+          {t("The grocery example uses 52 generated weeks for ten sample products. It demonstrates the same product and sales schema, but synthetic results cannot validate performance on real shops.")}
+        </p>
+        <div className="mt-4 grid gap-2 text-caption sm:grid-cols-2">
+          <p>{t("Test period")}: {date(demo.period.holdoutStart)} – {date(demo.period.lastObservedDate)}</p>
+          <p>{t("Test product-weeks")}: {demo.model.testRows}</p>
+          <p>{t("Random Forest")} MAE: {metric(demo.metrics.model.mae)} {t("units")}</p>
+          <p>{t("Previous-week baseline")} MAE: {metric(demo.metrics.baseline.mae)} {t("units")}</p>
+        </div>
+      </section>
+      <section className="panel">
+        <h2 className="heading">{t("Historical retail model performance")}</h2>
         <p className="hint mt-1">
           {t(
             "Last 12 complete weeks, held out from training. Lower MAE and RMSE are better; higher R² is better.",

@@ -42,6 +42,8 @@ The web app config connects the browser to Firebase. Access to products and move
 
 ## Verify
 
+GitHub Actions runs these checks on pushes and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for the local workflow and data guidelines.
+
 ```bash
 npm test
 npm run test:rules
@@ -80,9 +82,13 @@ Register an account, add a product with a restock target, and open StockSync in 
 
 ## SDA extension: Retail Insights
 
-The Overview links to a sample Retail Insights page. It shows plain-language demand estimates and sales trends for historical UCI products; a separate **How estimates were made** page contains the model evaluation and data details. The dataset's UK giftware products do **not** match this shop's inventory, and its predictions are not live shop forecasts. The Python model runs locally during preparation; the website bundles only a small derived JSON file. No raw transactions are written to Firestore.
+The Overview links to a sample Retail Insights page. It shows a generated grocery demo alongside historical UCI products; a separate **How estimates were made** page contains the model evaluation and data details. Neither dataset is the signed-in shop's sales history, and neither gives a live shop forecast. The Python models run locally during preparation; the website bundles only small derived JSON files. No raw UCI transactions or private shop data are written into the public assets.
 
-The [SDA report](docs/sda/report.md) documents the cleaning, chronological evaluation, actual metrics, figures, limitations, and reproduction steps. Its [PDF](output/pdf/StockSync-SDA-Report.pdf) is a separate submission artifact from the CC report. Keep the downloaded workbook at `analytics/data/online_retail_II.xlsx` in this checkout; that directory is ignored by Git. Install `analytics/requirements.txt` in a Python environment and run `python analytics/build.py` from the repository root. Run `python analytics/render_report.py` to regenerate the figures and PDF. The raw workbook is never uploaded to Firebase.
+The [SDA report](docs/sda/report.md) documents the real-dataset cleaning, chronological evaluation, metrics, figures, limitations, and reproduction steps. The [combined CC + SDA report](docs/combined-report.md) explains both halves and the generated grocery data. Its [PDF](output/pdf/StockSync-Combined-Report.pdf) is the detailed combined submission artifact. Keep the downloaded workbook at `analytics/data/online_retail_II.xlsx` in this checkout; that directory is ignored by Git. Install `analytics/requirements.txt` in a Python environment and run `python analytics/build.py` from the repository root. Run `python analytics/build_demo.py` to regenerate the committed demo CSVs and the bundled demo result. `analytics/demo/products.csv` follows the app's product import format; `analytics/demo/sales.csv` is generated historical practice data and is not imported into Firestore. Run `python analytics/render_report.py` to regenerate the separate SDA figures and PDF. The raw workbook is never uploaded to Firebase.
+
+The generated product CSV includes every field supported by StockSync's CSV importer, with `Quantity` set to the final simulated stock after the last sales week. Import it only into a demo account; it creates products and current stock, not backdated sale movements. The separate sales CSV holds the dated quantities required by the analytics pipeline. The UCI workbook remains the primary real-world dataset for the SDA evaluation.
+
+Run `python docs/render_combined.py` with Pandoc and LibreOffice installed to rebuild the editable combined DOCX and A4 PDF from its Markdown source.
 
 To reproduce everything from the repository root on a machine with `curl`, `unzip`, and `uv`:
 
@@ -94,6 +100,7 @@ uv venv --python 3.12 analytics/.venv
 source analytics/.venv/bin/activate
 uv pip install -r analytics/requirements.txt
 python analytics/build.py
+python analytics/build_demo.py
 python -m unittest discover -s analytics -p 'test_*.py'
 python analytics/render_report.py
 deactivate

@@ -369,7 +369,7 @@ export function OverviewPage({
           <div>
             <h2 className="heading">{t("Sample demand insights")}</h2>
             <p className="hint mt-1">
-              {t("Explore sales trends from a historical retail dataset.")}
+              {t("Explore a grocery demo and historical retail trends.")}
             </p>
           </div>
           <button className="btn-soft" onClick={() => onNavigate("Insights")}>

@@ -1,0 +1,11 @@
+Name,Category,Quantity,SKU,Alert at,Target,Supplier,Cost,Price,Unit,Pack size,Expiry
+Parle-G 250g,Biscuits,20,BIS-250,5,60,Demo Biscuit Supplier,22.5,25,pcs,24,2027-04-30
+Tata Salt 1kg,Staples,20,STA-1KG,5,60,Demo Staples Supplier,24,28,pcs,20,2027-09-30
+Amul Butter 100g,Dairy,20,DAI-100,5,60,Demo Dairy Supplier,49,56,pcs,20,2027-01-31
+Surf Excel 500g,Household,20,HOU-500,5,60,Demo Household Supplier,66,75,pcs,12,2027-08-31
+Maggi Noodles 70g,Snacks,20,SNK-70,5,60,Demo Snacks Supplier,12,14,pcs,48,2027-05-31
+Britannia Good Day 200g,Biscuits,20,BIS-200,5,60,Demo Biscuit Supplier,30,35,pcs,24,2027-06-30
+Aashirvaad Atta 5kg,Staples,20,STA-5KG,5,60,Demo Staples Supplier,270,300,pcs,10,2027-09-30
+Fortune Sunflower Oil 1L,Cooking Oil,20,OIL-1L,5,60,Demo Cooking Oil Supplier,155,170,pcs,12,2027-08-31
+Colgate Toothpaste 100g,Personal Care,20,PER-100,5,60,Demo Personal Care Supplier,58,65,pcs,24,2028-03-31
+India Gate Basmati Rice 1kg,Rice,20,RIC-1KG,5,60,Demo Rice Supplier,130,145,pcs,10,2027-10-31

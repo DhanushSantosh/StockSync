@@ -1,0 +1,12 @@
+digraph G {
+ graph [rankdir=TB, bgcolor=white, nodesep=0.27, ranksep=0.35, pad=0.12];
+ node [shape=box, style=rounded, color=black, fontname="Times New Roman", fontsize=12, margin="0.12,0.08"];
+ edge [color=black, arrowsize=0.65];
+ user [label="Record sale"];
+ valid [label="Validate\namount"];
+ read [label="Transaction reads\ncurrent stock"];
+ calc [label="Calculate next\nquantity"];
+ write [label="Update product +\nwrite movement"];
+ views [label="Snapshots refresh\nshop views"];
+ user -> valid -> read -> calc -> write -> views;
+}
