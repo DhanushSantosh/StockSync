@@ -42,14 +42,6 @@ const HistoryPage = lazy(() =>
 const OverviewPage = lazy(() =>
   import("./OverviewPage").then((file) => ({ default: file.OverviewPage })),
 );
-const InsightsPage = lazy(() =>
-  import("./InsightsPage").then((file) => ({ default: file.InsightsPage })),
-);
-const InsightsDetailsPage = lazy(() =>
-  import("./InsightsPage").then((file) => ({
-    default: file.InsightsDetailsPage,
-  })),
-);
 const ProductsPage = lazy(() =>
   import("./ProductsPage").then((file) => ({ default: file.ProductsPage })),
 );
@@ -73,7 +65,7 @@ const Sheet = lazy(() =>
 );
 
 const pages = ["Overview", "Record", "Products", "Reorder", "History"] as const;
-type Page = (typeof pages)[number] | "Insights" | "InsightsDetails";
+type Page = (typeof pages)[number];
 const tabIcons = {
   Overview: LayoutDashboard,
   Record: ReceiptText,
@@ -94,9 +86,6 @@ function AppShell({ user }: { user: User }) {
   const [notice, setNotice] = useState("");
   const [historySize, setHistorySize] = useState(50);
   const [page, setPage] = useState<Page>("Overview");
-  const [insightCode, setInsightCode] = useState("");
-  const inOverview =
-    page === "Overview" || page === "Insights" || page === "InsightsDetails";
   const [panel, setPanel] = useState<Panel | null>(null);
   const menu = useRef<
     Partial<Record<(typeof pages)[number], HTMLButtonElement | null>>
@@ -244,10 +233,7 @@ function AppShell({ user }: { user: User }) {
 
   useEffect(() => {
     const measure = () => {
-      const item =
-        page === "Insights" || page === "InsightsDetails"
-          ? menu.current.Overview
-          : menu.current[page];
+      const item = menu.current[page];
       if (item) setPill({ left: item.offsetLeft, width: item.offsetWidth });
     };
     measure();
@@ -297,9 +283,7 @@ function AppShell({ user }: { user: User }) {
               className="menu-item"
               data-tour={item}
               aria-current={
-                page === item || (item === "Overview" && inOverview)
-                  ? "page"
-                  : undefined
+                page === item ? "page" : undefined
               }
               onClick={() => setPage(item)}
             >
@@ -353,7 +337,7 @@ function AppShell({ user }: { user: User }) {
             <div key={page} className="page">
               {page !== "Overview" && (
                 <h1 className="mb-gap text-heading font-semibold">
-                  {t(page === "InsightsDetails" ? "Study details" : page)}
+                  {t(page)}
                 </h1>
               )}
               {page === "Overview" && canManage && profile.setupDone && (
@@ -378,19 +362,6 @@ function AppShell({ user }: { user: User }) {
                   onAdd={add}
                   onImport={importProducts}
                   onNavigate={setPage}
-                />
-              ) : page === "Insights" ? (
-                <InsightsPage
-                  code={insightCode}
-                  onCodeChange={setInsightCode}
-                  onBack={() => setPage("Overview")}
-                  onDetails={() => setPage("InsightsDetails")}
-                />
-              ) : page === "InsightsDetails" ? (
-                <InsightsDetailsPage
-                  code={insightCode}
-                  onCodeChange={setInsightCode}
-                  onBack={() => setPage("Insights")}
                 />
               ) : page === "Products" ? (
                 <ProductsPage
@@ -439,11 +410,7 @@ function AppShell({ user }: { user: User }) {
               key={item}
               className="tab"
               data-tour={item}
-              aria-current={
-                page === item || (item === "Overview" && inOverview)
-                  ? "page"
-                  : undefined
-              }
+              aria-current={page === item ? "page" : undefined}
               onClick={() => setPage(item)}
             >
               {item === "Record" ? (

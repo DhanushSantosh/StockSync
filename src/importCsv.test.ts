@@ -1,25 +1,9 @@
 import { describe, expect, it } from "vitest";
-import demoProductsCsv from "../analytics/demo/products.csv?raw";
 import { parseProductsCsv } from "./importCsv";
 
 const header = "Name,Category,Quantity,SKU,Alert at,Target,Supplier";
 
 describe("parseProductsCsv", () => {
-  it("imports all generated grocery products with their current stock and details", () => {
-    const { rows, problems } = parseProductsCsv(demoProductsCsv, []);
-    expect(problems).toEqual([]);
-    expect(rows).toHaveLength(10);
-    expect(rows.map((product) => product.quantity)).toEqual(Array(10).fill(20));
-    expect(rows.every((product) => product.supplier && product.packSize && product.expiryDate)).toBe(true);
-    expect(rows.find((product) => product.sku === "DAI-100")).toMatchObject({
-      name: "Amul Butter 100g",
-      category: "Dairy",
-      sellPrice: 5600,
-      costPrice: 4900,
-      unit: "pcs",
-    });
-  });
-
   it("reads products from the template columns", () => {
     const { rows, problems } = parseProductsCsv(
       `${header}\nParle-G 250g,Snacks,24,BIS-250,12,48,Sri Balaji`,
