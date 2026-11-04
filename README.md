@@ -82,7 +82,7 @@ Register an account, add a product with a restock target, and open StockSync in 
 
 ## Separate analytics project
 
-The Statistics and Data Analytics work has moved to the sibling `StockDemandPrediction` project. This repository contains the Cloud Computing inventory app and its Firebase flows. The sample forecasts and reports are maintained in the separate project.
+The Statistics and Data Analytics work has moved to the sibling [StockDemandPrediction](https://github.com/DhanushSantosh/StockDemandPrediction) project. This repository contains the Cloud Computing inventory app and its Firebase flows. The sample forecasts and reports are maintained in the separate project.
 
 ## Scope
 
